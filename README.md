@@ -10,8 +10,8 @@ cálculos de métricas son deterministas y deben funcionar con el chatbot apagad
 
 ## Estado
 
-Fase 1 completada: estructura base, tooling, CI y documentación inicial. Todavía no
-hay API, base de datos ni capa de IA.
+Fase 2 completada: infraestructura local con PostgreSQL y Redis mediante Docker
+Compose. Todavía no hay API, base de datos modelada ni capa de IA.
 
 Consulta el roadmap y las decisiones del proyecto en [`AGENTS.md`](AGENTS.md).
 
@@ -23,18 +23,41 @@ Consulta el roadmap y las decisiones del proyecto en [`AGENTS.md`](AGENTS.md).
 | uv | Paquetes y entornos |
 | Ruff | Lint y formato |
 | pytest | Tests |
-| FastAPI + SQLAlchemy + PostgreSQL | API y persistencia (fases siguientes) |
+| Docker + Docker Compose | PostgreSQL y Redis locales |
+| FastAPI + SQLAlchemy | API y persistencia (fases siguientes) |
 | LangGraph + LLM | Capa de IA (fases siguientes) |
 
 ## Requisitos
 
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/)
+- Docker con Docker Compose
 
 ## Puesta en marcha
 
 ```bash
+cp .env.example .env    # ajusta POSTGRES_PASSWORD
+docker compose up -d --wait
 uv sync
+```
+
+## Servicios locales
+
+| Servicio | Dirección | Credenciales |
+|---|---|---|
+| PostgreSQL | `localhost:5433` | `.env` (`POSTGRES_*`) |
+| Redis | `localhost:6379` | sin autenticación (solo local) |
+
+Los puertos se publican únicamente en `127.0.0.1`. El 5433 evita el choque con un
+PostgreSQL instalado en el host.
+
+```bash
+docker compose ps                              # estado y healthchecks
+docker compose logs -f postgres                # logs
+docker compose exec postgres psql -U jev_ai -d jev_ai
+docker compose exec redis redis-cli ping
+docker compose down                            # detener
+docker compose down -v                         # detener y borrar datos
 ```
 
 ## Comandos
@@ -54,6 +77,7 @@ tests/unit/          tests unitarios
 tests/integration/   tests con infraestructura real
 tests/e2e/           tests de extremo a extremo
 docs/                documentación de arquitectura y métricas
+compose.yaml         PostgreSQL y Redis locales
 .github/workflows/   integración continua
 ```
 
