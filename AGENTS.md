@@ -41,27 +41,31 @@ Principio central:
 
 ## 3. Estado actual del repositorio
 
-Repo recién creado con `uv init` (layout `src/`, build backend `uv_build`):
+Fase 1 completada (2026-11-12): estructura base, tooling, CI y documentación inicial.
 
 ```
 jev-ai/
-├── .git/
+├── .github/workflows/ci.yml   # ruff + pytest
 ├── .gitignore
-├── .python-version        # 3.12
-├── pyproject.toml         # dependencies = [] (vacío)
-├── README.md              # vacío
-└── src/
-    └── jev_ai/
-        └── __init__.py
+├── .python-version            # 3.12
+├── AGENTS.md
+├── README.md
+├── docs/architecture.md
+├── pyproject.toml             # ruff, pytest y dev-dependencies
+├── uv.lock
+├── src/
+│   └── jev_ai/
+│       └── __init__.py
+└── tests/{unit,integration,e2e}/
 ```
 
 - Paquete raíz: `jev_ai` (importar como `from jev_ai.modules.analytics import ...`).
-- `[project.scripts] jev-ai = "jev_ai:main"` es plantilla de `uv init`; eliminar o reemplazar cuando exista `main`.
-- Ya hay git inicializado; aún no hay commits de arquitectura, Docker, CI ni tests.
-- Pendiente de completar en `pyproject.toml`: descripción real, dependencias, configuración de ruff y pytest.
+- Sin dependencias de runtime todavía; dev-dependencies: `ruff` y `pytest` (`pytest-asyncio` se añade cuando existan tests async).
+- CI configurado en `.github/workflows/ci.yml`; todavía no hay remoto en GitHub.
+- Flujo Git: `main` (commit inicial) ← `develop` ← `feature/*`.
 
-### Decisión pendiente: colisión de nombres
-El paquete raíz se llama `jev_ai` y la arquitectura prevé un subpaquete del motor de decisiones también llamado `jev_ai`. Para evitar `jev_ai.ai.jev_ai`, recomendación: nombrar el subpaquete `jev_ai/ai/jev/` (o `engine/`). Confirmar con el usuario antes de crearlo.
+### Decisión resuelta: subpaquete del motor
+El subpaquete del motor de decisiones se llamará `src/jev_ai/ai/jev/` para evitar `jev_ai.ai.jev_ai`. Importación: `from jev_ai.ai.jev import ...`.
 
 ---
 
@@ -119,7 +123,7 @@ src/jev_ai/
 │   │   └── service.py
 │   └── conversations/             # conversaciones, mensajes, contexto
 ├── ai/                            # capa de IA (usa modules/, nunca al revés)
-│   ├── jev/                       # clasificador, políticas, validadores (nombre por confirmar)
+│   ├── jev/                       # clasificador, políticas, validadores
 │   ├── llm/                       # interfaces, providers (mock primero), service
 │   └── workflows/                 # LangGraph: states, nodes, graphs
 ├── integrations/
@@ -385,11 +389,11 @@ Celery + Redis (sincronizaciones y procesos de fondo), batching de conversacione
 ### Fase 1 — checklist inmediata
 - [x] Crear directorio `jev-ai` y `git init`
 - [x] `uv init` (layout `src/`, Python 3.12)
-- [ ] Completar `pyproject.toml` (descripción, ruff, pytest, dependencias de desarrollo)
-- [ ] Crear estructura mínima de carpetas (`tests/`, `docs/`, etc.)
-- [ ] Crear `ci.yml` (ruff + pytest) y un primer test trivial en verde
-- [ ] README inicial y `docs/architecture.md`
-- [ ] Primer commit (`feat: initialize project`) y rama `develop`
+- [x] Completar `pyproject.toml` (descripción, ruff, pytest, dependencias de desarrollo)
+- [x] Crear estructura mínima de carpetas (`tests/`, `docs/`, etc.)
+- [x] Crear `ci.yml` (ruff + pytest) y un primer test trivial en verde
+- [x] README inicial y `docs/architecture.md`
+- [x] Primer commit (`feat: initialize project`) y rama `develop`
 - No instalar LangGraph, Celery ni dependencias de IA todavía.
 
 ---
@@ -424,5 +428,6 @@ Evolución del proyecto, para no repetir debates:
 12. **Roadmap reducido a dos hitos** (analítica sin IA, luego IA), con extensiones opcionales.
 13. **Herramientas:** `uv`, `pytest-asyncio`, `testcontainers`, `structlog`, `ruff`, `import-linter`, CI desde la fase 1.
 14. **Layout real del repo:** `src/jev_ai/` con `uv_build` (en lugar de `app/`).
+15. **Subpaquete del motor (2026-11-12):** `src/jev_ai/ai/jev/`, confirmado con el usuario; evita la colisión `jev_ai.ai.jev_ai`.
 
 Cuando se tome una decisión nueva, agrégala aquí con fecha.

@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from jev-ai!")
+"""JEV AI: backend de inteligencia comercial y automatización de marketing."""
