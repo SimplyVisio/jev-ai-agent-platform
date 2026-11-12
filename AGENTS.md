@@ -41,28 +41,40 @@ Principio central:
 
 ## 3. Estado actual del repositorio
 
-Fases 1 y 2 completadas (2026-11-12): estructura base, tooling, CI, documentación e infraestructura local.
+Fases 1, 2 y 3 completadas (2026-11-12): estructura base, tooling, CI, documentación, infraestructura local, API FastAPI y autenticación contra PostgreSQL.
 
 ```
 jev-ai/
-├── .env.example               # variables de PostgreSQL y Redis
+├── .env.example               # PostgreSQL, Redis y DATABASE_URL
 ├── .github/workflows/ci.yml   # ruff + pytest
 ├── .gitignore
 ├── .python-version            # 3.12
 ├── AGENTS.md
 ├── README.md
+├── alembic.ini
+├── alembic/                   # migraciones
 ├── compose.yaml               # PostgreSQL 17 + Redis 7
 ├── docs/architecture.md
-├── pyproject.toml             # ruff, pytest y dev-dependencies
+├── pyproject.toml
+├── scripts/create_api_key.py  # crea organización + API key
 ├── uv.lock
 ├── src/
 │   └── jev_ai/
-│       └── __init__.py
+│       ├── main.py            # create_app (factory)
+│       ├── config.py
+│       ├── security.py
+│       ├── api/               # routers y dependencias
+│       ├── infrastructure/    # base de datos y sesiones
+│       └── modules/
+│           └── organizations/ # Organization y ApiKey
 └── tests/{unit,integration,e2e}/
 ```
 
 - Paquete raíz: `jev_ai` (importar como `from jev_ai.modules.analytics import ...`).
-- Sin dependencias de runtime todavía; dev-dependencies: `ruff` y `pytest` (`pytest-asyncio` se añade cuando existan tests async).
+- Runtime: `fastapi`, `uvicorn`, `pydantic-settings`, `sqlalchemy[asyncio]`, `asyncpg` y `alembic`. Dev: `ruff`, `pytest`, `pytest-asyncio`, `httpx2` y `testcontainers[postgres]`.
+- API actual: `GET /health` (pública) y `GET /api/v1/auth/me` (protegida con `X-API-Key`).
+- Esquema inicial migrado: `organizations` y `api_keys`. El modelo de marketing llega en la fase 4.
+- Tests de integración con PostgreSQL real vía testcontainers; requieren Docker.
 - CI configurado en `.github/workflows/ci.yml`; todavía no hay remoto en GitHub.
 - Infra local: PostgreSQL 17 y Redis 7 en `compose.yaml`, con healthchecks y volúmenes. Los puertos se publican solo en `127.0.0.1`; PostgreSQL usa 5433 para evitar choque con el host.
 - `.env` no se versiona; `.env.example` sí. Todavía no hay Dockerfile ni backend en Compose.
@@ -159,13 +171,15 @@ compose.yaml  Dockerfile  .env.example  .dockerignore
 ## 6. Modelo de datos inicial (4 tablas)
 
 ```
+organizations 1─N api_keys
 organizations 1─N campaigns 1─N ads 1─N ad_insights
 ```
 
-- **organizations:** empresa cliente. Incluye `currency_code` (una moneda por organización en v1; luego se moverá a `ad_accounts`).
-- **campaigns:** campañas de una organización.
-- **ads:** anuncios de una campaña.
-- **ad_insights:** métricas históricas. **Una fila por anuncio por día**, con `UNIQUE(ad_id, date)`.
+- **organizations:** empresa cliente. Incluye `currency_code` (una moneda por organización en v1; luego se moverá a `ad_accounts`). Implementada en la fase 3.
+- **api_keys:** claves de acceso por organización; solo guardan el hash SHA-256. Implementada en la fase 3.
+- **campaigns:** campañas de una organización (fase 4).
+- **ads:** anuncios de una campaña (fase 4).
+- **ad_insights:** métricas históricas (fase 4). **Una fila por anuncio por día**, con `UNIQUE(ad_id, date)`.
 - Desnormalizar `organization_id` también en `ads` y `ad_insights`, con índice `(organization_id, date)`, para filtrar por organización sin joins y reducir riesgo de fuga de datos entre clientes.
 - No sobrescribir métricas: se guardan registros históricos por periodo (snapshots), para comparar semana actual vs. anterior.
 
@@ -187,7 +201,7 @@ organizations 1─N campaigns 1─N ads 1─N ad_insights
 `ad_sets`, `ad_accounts`, `landing_pages`, `landing_events`, `conversations`, `messages`, `users`, `organization_members`.
 
 ### Autenticación inicial
-API keys asociadas a una organización. Mostrar la clave una sola vez al crearla, guardar su **hash SHA-256** (nunca en texto plano) y compararla con `hmac.compare_digest`. Después se agregarán usuarios y roles. Toda consulta (API y chatbot) filtra por el `organization_id` del token. Debe existir un test que pruebe que una organización no puede ver datos de otra.
+API keys asociadas a una organización en la tabla `api_keys`, enviadas en la cabecera `X-API-Key`. La clave se muestra una sola vez al crearla y se guarda su **hash SHA-256** (nunca en texto plano); la comparación usa `hmac.compare_digest`. Implementado en la fase 3; el script `scripts/create_api_key.py` permite crear organizaciones y claves. Después se agregarán usuarios y roles. Toda consulta (API y chatbot) filtra por el `organization_id` del token. Debe existir un test que pruebe que una organización no puede ver datos de otra.
 
 ---
 
@@ -338,7 +352,7 @@ Agrupar mensajes consecutivos de un usuario (ej. 5 mensajes en pocos segundos) e
 | Redis | Caché / broker (fase opcional) |
 | Celery | Tareas en segundo plano (opcional) |
 | LangGraph | Workflows (fase 9) |
-| pytest + pytest-asyncio + HTTPX | Testing |
+| pytest + pytest-asyncio + httpx2 | Testing |
 | testcontainers | Integración con infraestructura real |
 | Faker | Datos ficticios |
 | structlog | Logging estructurado |
@@ -374,8 +388,8 @@ Híbrido: **Python local con `uv`** (depuración sencilla en VS Code) + **Docker
 |---|---|
 | 1 | Entorno, Git, uv, estructura mínima, `pyproject.toml`, CI (ruff + pytest), documentación inicial |
 | 2 | Docker Compose, PostgreSQL y Redis |
-| 3 | FastAPI, Pydantic y autenticación por organización (API keys) |
-| 4 | SQLAlchemy async, Alembic y modelo de marketing |
+| 3 | FastAPI, Pydantic, SQLAlchemy async/Alembic base y autenticación por API keys (`organizations`, `api_keys`) |
+| 4 | Modelo de marketing (`campaigns`, `ads`, `ad_insights`) |
 | 5 | CRUD de campañas y anuncios |
 | 6 | Analytics API, métricas y tests |
 
@@ -433,6 +447,7 @@ Evolución del proyecto, para no repetir debates:
 13. **Herramientas:** `uv`, `pytest-asyncio`, `testcontainers`, `structlog`, `ruff`, `import-linter`, CI desde la fase 1.
 14. **Layout real del repo:** `src/jev_ai/` con `uv_build` (en lugar de `app/`).
 15. **Subpaquete del motor (2026-11-12):** `src/jev_ai/ai/jev/`, confirmado con el usuario; evita la colisión `jev_ai.ai.jev_ai`.
-16. **Infra local (2026-11-12):** PostgreSQL 17 y Redis 7 con Docker Compose; puertos solo en `127.0.0.1` y PostgreSQL en 5433 por choque con el host. Sin Dockerfile hasta que exista backend.
+16. **Infra local (2026-11-12):** PostgreSQL 17 y Redis 7 con Docker Compose; puertos solo en `127.0.0.1` y PostgreSQL en 5433 por choque con el host. Límites de recursos: PostgreSQL 1 CPU / 512 MB y Redis 0.5 CPU / 256 MB. Sin Dockerfile hasta que exista backend.
+17. **BD y auth adelantadas (2026-11-12):** por decisión del usuario, la fase 3 incluye SQLAlchemy async, Alembic, `organizations` y `api_keys`; la fase 4 queda para el modelo de marketing. Auth con cabecera `X-API-Key`, hash SHA-256 y `hmac.compare_digest`. Tests de integración con testcontainers/PostgreSQL 17 y `httpx2`.
 
 Cuando se tome una decisión nueva, agrégala aquí con fecha.

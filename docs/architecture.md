@@ -11,9 +11,13 @@ PostgreSQL, Redis, worker) tendrán su propio contenedor.
 src/jev_ai/
 ├── main.py
 ├── config.py
-├── api/v1/endpoints/       HTTP, routers y dependencias de FastAPI
+├── security.py             hashing de API keys
+├── api/
+│   ├── deps.py             sesión y autenticación
+│   └── v1/endpoints/       HTTP, routers y dependencias de FastAPI
 ├── modules/                dominios de negocio deterministas
-│   ├── marketing/          campañas, anuncios e insights
+│   ├── organizations/      organizaciones y API keys
+│   ├── marketing/          campañas, anuncios e insights (fase 4)
 │   ├── analytics/          cálculo y exposición de métricas
 │   └── conversations/      conversaciones, mensajes y contexto
 ├── ai/                     capa de IA (usa modules/, nunca al revés)
@@ -47,13 +51,24 @@ Cada módulo crea solo las capas que necesita: `models.py`, `schemas.py`,
 
 La regla 1 se hará cumplir con `import-linter` cuando exista la capa de IA.
 
-## Modelo de datos inicial
+## Autenticación
+
+La API usa API keys por organización en la cabecera `X-API-Key`. Cada clave se guarda
+como hash SHA-256 en la tabla `api_keys`; el texto plano solo se muestra al crearla. La
+dependencia de FastAPI resuelve la organización y la inyecta en los endpoints. Todas
+las consultas de negocio filtran por ese `organization_id`.
+
+## Modelo de datos
 
 ```text
-organizations 1─N campaigns 1─N ads 1─N ad_insights
+organizations 1─N api_keys
+organizations 1─N campaigns 1─N ads 1─N ad_insights   (fase 4)
 ```
 
-`ad_insights` guarda una fila por anuncio y día, con `UNIQUE(ad_id, date)`, y solo
+`organizations` y `api_keys` ya existen. La migración inicial está en
+`alembic/versions/`. En fase 4 se agrega el modelo de marketing.
+
+`ad_insights` guardará una fila por anuncio y día, con `UNIQUE(ad_id, date)`, y solo
 métricas base (impressions, reach, clicks, landing_page_views, spend, leads, sales,
 revenue). Los ratios se calculan en `analytics/service.py`; nunca se almacenan ni se
 promedian entre días.
