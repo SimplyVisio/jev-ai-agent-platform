@@ -18,6 +18,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
   redis:
     image: redis:7-alpine
@@ -33,6 +38,11 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
 volumes:
   postgres_data:
