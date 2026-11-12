@@ -41,15 +41,17 @@ Principio central:
 
 ## 3. Estado actual del repositorio
 
-Fase 1 completada (2026-11-12): estructura base, tooling, CI y documentación inicial.
+Fases 1 y 2 completadas (2026-11-12): estructura base, tooling, CI, documentación e infraestructura local.
 
 ```
 jev-ai/
+├── .env.example               # variables de PostgreSQL y Redis
 ├── .github/workflows/ci.yml   # ruff + pytest
 ├── .gitignore
 ├── .python-version            # 3.12
 ├── AGENTS.md
 ├── README.md
+├── compose.yaml               # PostgreSQL 17 + Redis 7
 ├── docs/architecture.md
 ├── pyproject.toml             # ruff, pytest y dev-dependencies
 ├── uv.lock
@@ -62,6 +64,8 @@ jev-ai/
 - Paquete raíz: `jev_ai` (importar como `from jev_ai.modules.analytics import ...`).
 - Sin dependencias de runtime todavía; dev-dependencies: `ruff` y `pytest` (`pytest-asyncio` se añade cuando existan tests async).
 - CI configurado en `.github/workflows/ci.yml`; todavía no hay remoto en GitHub.
+- Infra local: PostgreSQL 17 y Redis 7 en `compose.yaml`, con healthchecks y volúmenes. Los puertos se publican solo en `127.0.0.1`; PostgreSQL usa 5433 para evitar choque con el host.
+- `.env` no se versiona; `.env.example` sí. Todavía no hay Dockerfile ni backend en Compose.
 - Flujo Git: `main` (commit inicial) ← `develop` ← `feature/*`.
 
 ### Decisión resuelta: subpaquete del motor
@@ -429,5 +433,6 @@ Evolución del proyecto, para no repetir debates:
 13. **Herramientas:** `uv`, `pytest-asyncio`, `testcontainers`, `structlog`, `ruff`, `import-linter`, CI desde la fase 1.
 14. **Layout real del repo:** `src/jev_ai/` con `uv_build` (en lugar de `app/`).
 15. **Subpaquete del motor (2026-11-12):** `src/jev_ai/ai/jev/`, confirmado con el usuario; evita la colisión `jev_ai.ai.jev_ai`.
+16. **Infra local (2026-11-12):** PostgreSQL 17 y Redis 7 con Docker Compose; puertos solo en `127.0.0.1` y PostgreSQL en 5433 por choque con el host. Sin Dockerfile hasta que exista backend.
 
 Cuando se tome una decisión nueva, agrégala aquí con fecha.
