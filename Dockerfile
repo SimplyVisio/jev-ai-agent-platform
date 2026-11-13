@@ -29,6 +29,7 @@ COPY --from=builder --chown=app:app /app /app
 COPY --chown=app:app alembic.ini ./
 COPY --chown=app:app alembic ./alembic
 COPY --chown=app:app scripts ./scripts
+COPY --chown=app:app mocks ./mocks
 
 USER app
 

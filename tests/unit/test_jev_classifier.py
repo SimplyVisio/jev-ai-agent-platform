@@ -16,6 +16,9 @@ from jev_ai.ai.jev.intents import Intent
         ("¿Qué puedes hacer?", Intent.HELP),
         ("Hola", Intent.HELP),
         ("Quiero saber algo", Intent.UNKNOWN),
+        ("Elimina la campaña Demo", Intent.UNKNOWN),
+        ("Sube el presupuesto de la campaña Demo", Intent.UNKNOWN),
+        ("Comparte el informe con el equipo", Intent.UNKNOWN),
     ],
 )
 def test_classifies_closed_intents(message: str, expected: Intent) -> None:

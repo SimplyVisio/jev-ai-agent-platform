@@ -275,6 +275,24 @@ def test_chat_does_not_leak_other_organization_data(
     assert "No encontré esa campaña" in body["reply"]
 
 
+def test_chat_rejects_unsupported_actions(
+    client: TestClient,
+    chat_seed: tuple[ChatSeed, ChatSeed],
+) -> None:
+    alpha, _beta = chat_seed
+
+    body = post_chat(
+        client,
+        alpha.key,
+        'Elimina la campaña "Chat Campaign"',
+    )
+
+    assert body["status"] == "needs_clarification"
+    assert body["intent"] == "unknown"
+    assert body["query_plan"] is None
+    assert body["data"] is None
+
+
 def test_chat_help_and_unknown_intents(
     client: TestClient,
     chat_seed: tuple[ChatSeed, ChatSeed],

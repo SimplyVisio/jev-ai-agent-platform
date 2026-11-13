@@ -167,6 +167,8 @@ mensaje
   modo que el texto no puede inventar cifras.
 - El estado tipado `ChatState` viaja por los nodos; no hay checkpointer ni memoria
   entre peticiones.
+- El clasificador se evalúa contra `mocks/datasets/intents.json`; CI exige accuracy y
+  macro F1 mínimos. Ver [`evaluation.md`](evaluation.md).
 - Redis y las tablas de conversaciones quedan para una fase posterior; ver
   [`chat.md`](chat.md) y el ADR `docs/decisions/0001-offline-llm-mocks.md`.
 
