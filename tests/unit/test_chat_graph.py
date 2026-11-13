@@ -6,7 +6,8 @@ from uuid import uuid4
 import pytest
 
 from jev_ai.ai.jev.classifier import RuleBasedClassifier
-from jev_ai.ai.llm.base import LLMProvider
+from jev_ai.ai.jev.plans import parse_query_plan
+from jev_ai.ai.llm.base import LLMContext, LLMProvider
 from jev_ai.ai.llm.mock import (
     LLMConnectionError,
     MockLLMProvider,
@@ -21,6 +22,7 @@ async def invoke(
     *,
     llm: LLMProvider | None = None,
     dry_run: bool = False,
+    context: LLMContext | None = None,
 ) -> dict[str, Any]:
     graph = build_chat_graph(RuleBasedClassifier(), llm or MockLLMProvider.default())
     return await graph.ainvoke(
@@ -29,6 +31,7 @@ async def invoke(
             "organization_id": uuid4(),
             "dry_run": dry_run,
             "conversation_id": None,
+            "context": context,
             "user_id": None,
         },
         {"configurable": {"session": None}},
@@ -95,3 +98,24 @@ async def test_dry_run_validates_without_executing() -> None:
     assert state["plan"].operation.value == "top_ads_by_metric"
     assert "Plan validado" in state["reply"]
     assert "data" not in state
+
+
+@pytest.mark.asyncio
+async def test_follow_up_with_context_uses_previous_plan() -> None:
+    context = LLMContext(
+        last_plan=parse_query_plan(
+            {
+                "operation": "top_ads_by_metric",
+                "metric": "roas",
+                "date_from": "2026-10-01",
+                "date_to": "2026-10-31",
+                "limit": 5,
+            }
+        )
+    )
+
+    state = await invoke("¿Y en septiembre de 2026?", context=context, dry_run=True)
+
+    assert state["status"] is ChatStatus.OK
+    assert state["intent"].value == "top_ads_by_metric"
+    assert state["plan"].date_from.isoformat() == "2026-09-01"

@@ -38,7 +38,11 @@ Formato: `{"detail": "..."}`.
 | `GET /api/v1/analytics/campaigns` | Rendimiento por campaña |
 | `GET /api/v1/analytics/ads` | Rendimiento por anuncio |
 | `GET /api/v1/analytics/trends` | Serie temporal |
-| `POST /api/v1/chat` | Chat offline: lenguaje natural → QueryPlan → datos |
+| `POST /api/v1/chat` | Chat offline stateless: lenguaje natural → QueryPlan → datos |
+| `GET/POST /api/v1/conversations` | Listar / abrir conversaciones |
+| `GET /api/v1/conversations/{id}` | Consultar una conversación |
+| `GET /api/v1/conversations/{id}/messages` | Listar el transcript |
+| `POST /api/v1/conversations/{id}/messages` | Enviar mensaje y persistir el turno |
 
 Los listados aceptan `limit` (1–100, por defecto 50), `offset` y filtros de estado u
 objetivo. `DELETE` archiva (`status=archived`), no borra datos.
@@ -57,7 +61,8 @@ Los endpoints de analítica exigen `date_from` y `date_to` inclusivos. `trends` 
 
 `POST /api/v1/chat` es stateless: no guarda conversación ni usa Redis. LangGraph
 orquesta la clasificación de intención, la propuesta de `QueryPlan`, la validación con
-JEV AI y la ejecución con los servicios de analítica y marketing.
+JEV AI y la ejecución con los servicios de analítica y marketing. Para guardar el
+historial, usa los endpoints de conversaciones.
 
 ### Petición
 
@@ -125,6 +130,75 @@ la consulta.
 `null` cuando no se ejecutó ninguna consulta.
 
 Detalles del flujo, catálogo y políticas en [`chat.md`](chat.md).
+
+## Conversaciones persistentes
+
+Cada conversación pertenece a la organización de la API key. Un id de otra
+organización devuelve `404`, igual que uno inexistente. El título es opcional: si no
+se envía, se autogenera con el primer mensaje.
+
+```http
+POST /api/v1/conversations
+Content-Type: application/json
+
+{"title": "Análisis de octubre"}
+```
+
+```json
+{
+  "id": "3f4d2c1a-...",
+  "organization_id": "39f20b86-...",
+  "title": "Análisis de octubre",
+  "created_at": "2026-11-13T16:30:00Z",
+  "updated_at": "2026-11-13T16:30:00Z"
+}
+```
+
+```http
+POST /api/v1/conversations/{id}/messages
+Content-Type: application/json
+
+{"message": "Top 3 anuncios por ROAS en octubre de 2026"}
+```
+
+```json
+{
+  "conversation_id": "3f4d2c1a-...",
+  "user_message_id": "9a1e...",
+  "assistant_message_id": "7b2c...",
+  "status": "ok",
+  "intent": "top_ads_by_metric",
+  "confidence": 0.95,
+  "reply": "Top 3 anuncios por ROAS (2026-10-01 a 2026-10-31): ...",
+  "query_plan": {
+    "operation": "top_ads_by_metric",
+    "metric": "roas",
+    "date_from": "2026-10-01",
+    "date_to": "2026-10-31",
+    "limit": 3
+  },
+  "data": []
+}
+```
+
+Cada mensaje del asistente guarda `intent`, `confidence`, `status` y `query_plan` para
+auditoría. El `data` completo de la respuesta no se duplica en la tabla: se devuelve
+en el POST y puede reproducirse desde el plan. Usuario y asistente se confirman en una
+sola transacción y `sequence` garantiza el orden del transcript.
+
+`GET /api/v1/conversations` devuelve una lista ordenada por `updated_at` descendente.
+`GET /api/v1/conversations/{id}/messages` devuelve una lista ordenada por `sequence`;
+cada elemento incluye `role`, `content`, `intent`, `confidence`, `status`,
+`query_plan` y `created_at`. Ambos listados aceptan `limit` y `offset`.
+
+### Memoria acotada
+
+El chat persistente carga como máximo **10 mensajes** y **4000 caracteres** de
+historial. Se conservan los mensajes más recientes; el contexto no crece sin límite.
+El mock resuelve seguimientos deterministas como “¿Y en septiembre?” o “¿Y el CTR?”
+reutilizando el último plan válido; las comparaciones requieren dos periodos
+explícitos. Un proveedor LLM real recibirá el mismo contexto acotado en
+`LLMProvider.generate(..., context=...)`.
 
 ## Ejemplo con curl
 

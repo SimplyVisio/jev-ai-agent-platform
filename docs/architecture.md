@@ -124,10 +124,13 @@ organizations 1─N api_keys
 organizations 1─N campaigns 1─N ads 1─N ad_insights
 organizations 1─N ads
 organizations 1─N ad_insights
+organizations 1─N conversations 1─N messages
+organizations 1─N messages
 ```
 
-Las cinco tablas existen. `campaigns`, `ads` y `ad_insights` viven en
-`modules/marketing/models.py`; la migración está en `alembic/versions/`.
+Las siete tablas existen. `campaigns`, `ads` y `ad_insights` viven en
+`modules/marketing/models.py`; `conversations` y `messages` en
+`modules/conversations/models.py`. Las migraciones están en `alembic/versions/`.
 
 - `campaigns` y `ads` desnormalizan `organization_id` para filtrar sin joins.
 - `objective` y `status` son `VARCHAR`; el catálogo cerrado vive en `StrEnum` de Python
@@ -141,11 +144,17 @@ Las cinco tablas existen. `campaigns`, `ads` y `ad_insights` viven en
   ni se promedian entre días.
 - El borrado es en cascada: organización → campañas → anuncios → métricas.
 - No hay `external_id` de Meta Ads todavía; se agrega con la integración real.
+- `conversations` y `messages` desnormalizan `organization_id` para el filtrado
+  multi-tenant. `messages` usa `UNIQUE(conversation_id, sequence)`; la conversación se
+  bloquea al escribir para serializar los turnos y ordenar el transcript.
+- El asistente guarda `intent`, `confidence`, `status` y `query_plan` en JSONB. El
+  `data` de analítica no se duplica; se puede reproducir desde el plan.
+- El borrado es en cascada: organización → conversaciones → mensajes.
 
-## Chat offline (sin Redis)
+## Chat y conversaciones (sin Redis)
 
-El chat actual es stateless y no usa Redis. LangGraph orquesta la secuencia; el grafo
-se compila una vez y la sesión de BD se pasa en la configuración de cada invocación:
+El chat y la persistencia no usan Redis. LangGraph orquesta la secuencia; el grafo se
+compila una vez y la sesión de BD se pasa en la configuración de cada invocación:
 
 ```text
 mensaje
@@ -158,19 +167,22 @@ mensaje
   → generate_response: render_reply (plantillas con datos validados)
 ```
 
-- `POST /api/v1/chat` es el único endpoint nuevo: `api/v1/endpoints/chat.py`.
+- `POST /api/v1/chat` es stateless (`api/v1/endpoints/chat.py`). Los endpoints de
+  `/api/v1/conversations` persisten el hilo con `PersistentChatService`.
 - El LLM nunca genera SQL ni decide la organización: el `organization_id` sale del
   contexto autenticado.
 - JEV AI valida el plan con reglas deterministas (catálogo, rango máximo de 366 días,
   métricas no ordenables, nombre de campaña).
 - La respuesta se construye con plantillas a partir de los datos ya calculados, de
   modo que el texto no puede inventar cifras.
-- El estado tipado `ChatState` viaja por los nodos; no hay checkpointer ni memoria
-  entre peticiones.
+- El estado tipado `ChatState` viaja por los nodos; no hay checkpointer. El
+  transcript se persiste en PostgreSQL, no en el grafo.
+- La memoria es un contexto acotado (10 mensajes / 4000 caracteres) construido en
+  `ai/memory.py`; el último plan permite resolver seguimientos deterministas.
 - El clasificador se evalúa contra `mocks/datasets/intents.json`; CI exige accuracy y
   macro F1 mínimos. Ver [`evaluation.md`](evaluation.md).
-- Redis y las tablas de conversaciones quedan para una fase posterior; ver
-  [`chat.md`](chat.md) y el ADR `docs/decisions/0001-offline-llm-mocks.md`.
+- Decisiones: `docs/decisions/0001-offline-llm-mocks.md` y
+  `docs/decisions/0002-conversation-persistence.md`.
 
 ## Principios de diseño
 

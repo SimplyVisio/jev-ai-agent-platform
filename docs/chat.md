@@ -20,11 +20,38 @@ START
 El grafo vive en `ai/workflows/graph.py` y se compila una sola vez en `ChatService`.
 La sesión de base de datos se pasa por invocación en
 `config["configurable"]["session"]`; el estado (`ChatState`) lleva el mensaje, la
-intención, la confianza, el plan, los datos, la respuesta, el estado y los errores.
-No hay checkpointer ni persistencia: cada petición empieza y termina en memoria.
+intención, la confianza, el plan, los datos, la respuesta, el estado, los errores y el
+contexto acotado de la conversación. No hay checkpointer: el grafo no reanuda
+ejecuciones, pero el transcript sí se persiste con los endpoints de conversaciones.
 
-`POST /api/v1/chat` no persiste conversaciones ni mensajes. La memoria y Redis quedan
-para una fase posterior.
+## Persistencia y memoria
+
+`POST /api/v1/chat` sigue siendo stateless. Para conservar el hilo se usan:
+
+```text
+POST   /api/v1/conversations
+POST   /api/v1/conversations/{id}/messages
+GET    /api/v1/conversations
+GET    /api/v1/conversations/{id}
+GET    /api/v1/conversations/{id}/messages
+```
+
+`PersistentChatService` bloquea la conversación (`SELECT ... FOR UPDATE`), asigna
+`sequence`, carga el contexto, ejecuta el mismo grafo y guarda usuario y asistente en
+una sola transacción. Cada respuesta del asistente conserva `intent`, `confidence`,
+`status` y `query_plan`; el `data` de analítica no se duplica en la tabla.
+
+La memoria es explícita y acotada:
+
+- últimos **10 mensajes** y **4000 caracteres** (`ai/memory.py`);
+- si el mensaje más reciente no cabe, se recorta; los antiguos se descartan;
+- el último `QueryPlan` válido se usa para seguimientos deterministas como
+  “¿Y en septiembre?” o “¿Y el CTR?”;
+- las comparaciones no se infieren: requieren dos periodos explícitos;
+- el `organization_id` de la conversación sale siempre de la API key.
+
+Un futuro proveedor LLM recibe el contexto en
+`LLMProvider.generate(..., context=LLMContext)`, con los mensajes y el último plan.
 
 ## Catálogo cerrado
 
@@ -89,6 +116,10 @@ El traductor reconoce meses en español, fechas ISO, rangos como “últimos 7 d
 “este mes”, “mes pasado”, métricas (`ROAS`, `CPL`, `CTR`, etc.), límites y nombres de
 campaña entre comillas o tras la palabra “campaña”.
 
+Cuando recibe un `LLMContext`, el mock intenta primero el mensaje actual y, si no
+produce plan, reutiliza el último plan válido para cambiar periodo o métrica. Es una
+memoria determinista y limitada, no una comprensión semántica completa.
+
 El endpoint usa `MockLLMProvider.default()` en `api/v1/endpoints/chat.py`. Cambiar a un
 proveedor real solo requiere implementar `LLMProvider` e inyectarlo en `ChatService`.
 
@@ -126,9 +157,9 @@ Ver [`evaluation.md`](evaluation.md) para métricas, umbrales y limitaciones.
 
 ## Limitaciones actuales
 
-- Sin memoria de conversación ni tablas `conversations`/`messages`.
-- Sin checkpointer: el grafo no guarda estado entre peticiones ni reanuda ejecuciones.
-- Sin memoria de conversación: cada mensaje se interpreta aislado.
+- Sin checkpointer: el grafo no reanuda ejecuciones interrumpidas.
+- La memoria es un contexto acotado; no hay resumen ni memoria semántica completa.
+- Los seguimientos de comparación necesitan periodos explícitos.
 - Sin proveedor LLM real.
 - Las respuestas se generan con plantillas; el LLM solo propone el plan.
 - `compare_periods` compara el resumen de la organización, no una campaña concreta.

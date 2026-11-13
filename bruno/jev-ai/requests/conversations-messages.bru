@@ -1,0 +1,15 @@
+meta {
+  name: Conversations - Messages
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{baseUrl}}/api/v1/conversations/{{conversationId}}/messages?limit=50&offset=0
+  body: none
+  auth: none
+}
+
+headers {
+  X-API-Key: {{apiKey}}
+}

@@ -10,8 +10,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from jev_ai.ai.llm.base import LLMProvider
-from jev_ai.ai.llm.plan_builder import build_plan_from_message
+from jev_ai.ai.llm.base import LLMContext, LLMProvider
+from jev_ai.ai.llm.plan_builder import build_follow_up_plan, build_plan_from_message
 
 
 class LLMError(Exception):
@@ -68,7 +68,12 @@ class MockLLMProvider(LLMProvider):
         self._error = error
         self._planner = planner
 
-    async def generate(self, prompt: str) -> str:
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        context: LLMContext | None = None,
+    ) -> str:
         """Devuelve una respuesta fija o un plan JSON determinista."""
         if self._delay > 0:
             await asyncio.sleep(self._delay)
@@ -80,6 +85,8 @@ class MockLLMProvider(LLMProvider):
                 return response.response
 
         plan = self._planner(prompt)
+        if plan is None and context is not None:
+            plan = build_follow_up_plan(prompt, context)
         if plan is not None:
             return json.dumps(plan, ensure_ascii=False)
         raise LLMNoResponseError("No mock response or plan for the prompt")

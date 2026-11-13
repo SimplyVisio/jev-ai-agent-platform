@@ -1,0 +1,15 @@
+meta {
+  name: Conversations - List
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{baseUrl}}/api/v1/conversations?limit=50&offset=0
+  body: none
+  auth: none
+}
+
+headers {
+  X-API-Key: {{apiKey}}
+}
