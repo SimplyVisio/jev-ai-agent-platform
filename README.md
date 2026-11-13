@@ -10,9 +10,10 @@ cálculos de métricas son deterministas y deben funcionar con el chatbot apagad
 
 ## Estado
 
-Fase 3 completada: API FastAPI con configuración tipada, autenticación por API key
-contra PostgreSQL y migraciones con Alembic. El modelo de marketing y la capa de IA
-llegan en las fases siguientes.
+Fases 1 a 4 completadas: API FastAPI con configuración tipada, autenticación por API
+key contra PostgreSQL, migraciones con Alembic y el modelo de marketing (`campaigns`,
+`ads` y `ad_insights`). El CRUD, las métricas y la capa de IA llegan en las fases
+siguientes.
 
 Consulta el roadmap y las decisiones del proyecto en [`AGENTS.md`](AGENTS.md).
 

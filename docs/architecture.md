@@ -84,16 +84,26 @@ las consultas de negocio filtran por ese `organization_id`.
 
 ```text
 organizations 1─N api_keys
-organizations 1─N campaigns 1─N ads 1─N ad_insights   (fase 4)
+organizations 1─N campaigns 1─N ads 1─N ad_insights
+organizations 1─N ads
+organizations 1─N ad_insights
 ```
 
-`organizations` y `api_keys` ya existen. La migración inicial está en
-`alembic/versions/`. En fase 4 se agrega el modelo de marketing.
+Las cinco tablas existen. `campaigns`, `ads` y `ad_insights` viven en
+`modules/marketing/models.py`; la migración está en `alembic/versions/`.
 
-`ad_insights` guardará una fila por anuncio y día, con `UNIQUE(ad_id, date)`, y solo
-métricas base (impressions, reach, clicks, landing_page_views, spend, leads, sales,
-revenue). Los ratios se calculan en `analytics/service.py`; nunca se almacenan ni se
-promedian entre días.
+- `campaigns` y `ads` desnormalizan `organization_id` para filtrar sin joins.
+- `objective` y `status` son `VARCHAR`; el catálogo cerrado vive en `StrEnum` de Python
+  (`CampaignObjective`, `CampaignStatus`, `AdStatus`) y se validará en la capa de
+  schemas. No se usa `ENUM` nativo de PostgreSQL para evitar `ALTER TYPE`.
+- `ad_insights` guarda una fila por anuncio y día, con PK subrogada `id` y
+  `UNIQUE(ad_id, date)`, índice `(organization_id, date)`, checks de no negatividad y
+  `NUMERIC(12,2)` para `spend` y `revenue`.
+- Solo métricas base (impressions, reach, clicks, landing_page_views, spend, leads,
+  sales, revenue). Los ratios se calculan en `analytics/service.py`; nunca se almacenan
+  ni se promedian entre días.
+- El borrado es en cascada: organización → campañas → anuncios → métricas.
+- No hay `external_id` de Meta Ads todavía; se agrega con la integración real.
 
 ## Principios de diseño
 
