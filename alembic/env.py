@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from jev_ai.config import get_settings
 from jev_ai.infrastructure.database.base import Base
+from jev_ai.modules.marketing import models as marketing_models  # noqa: F401
 from jev_ai.modules.organizations import models  # noqa: F401
 
 config = context.config
