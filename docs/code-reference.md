@@ -264,11 +264,39 @@ Traductor determinista: reconoce métricas, meses en español, fechas ISO, “es
 “mes pasado”, “últimos N días”, límites y nombres de campaña. Devuelve un diccionario o
 `None` si no puede proponer un plan.
 
+### `ChatStatus`
+
+`StrEnum` con `ok`, `needs_clarification` y `error`. Lo comparten el grafo, el servicio
+y el endpoint.
+
+### `ChatState`
+
+`TypedDict` con el mensaje, `organization_id`, `dry_run`, ids de conversación/usuario,
+intención, confianza, plan, datos, respuesta, estado y errores. Cada nodo actualiza
+solo sus claves.
+
+### `ChatNodes` y `build_chat_graph`
+
+`ChatNodes` agrupa los nodos y las rutas condicionales; `build_chat_graph` los conecta
+con `StateGraph` y compila el flujo:
+
+| Nodo | Función |
+|---|---|
+| `classify_intent` | Ejecuta el clasificador |
+| `help` / `clarify` / `error` | Respuestas terminales |
+| `propose_plan` | Llama al LLM y parsea el plan |
+| `validate_plan` | Aplica políticas y gestiona `dry_run` |
+| `execute_service` | Ejecuta el plan con la sesión de la invocación |
+| `generate_response` | Renderiza la respuesta |
+
+La sesión viaja en `config["configurable"]["session"]`; el grafo se compila una vez en
+`ChatService` y no usa checkpointer.
+
 ### `ChatService.handle(...)`
 
-Orquesta clasificación, generación del plan, parseo, validación, ejecución y respuesta.
-`ChatResult` contiene `status`, `intent`, `confidence`, `reply`, `query_plan` y `data`.
-No persiste estado.
+Construye el estado inicial, invoca el grafo y convierte el estado final en
+`ChatResult` (`status`, `intent`, `confidence`, `reply`, `query_plan`, `data`). No
+persiste estado.
 
 ### `execute_query_plan(session, organization_id, plan)`
 
@@ -325,8 +353,8 @@ lifespan que crea y libera el engine, registra los routers y mapea
 ### `ChatRequest`, `ChatResponse` y `chat()`
 
 `POST /api/v1/chat` valida el mensaje (1–1000 caracteres), inyecta la organización
-autenticada y delega en un `ChatService` con `RuleBasedClassifier` y
-`MockLLMProvider.default()`. `ChatResponse` expone estado, intención, confianza,
+autenticada y delega en un `ChatService` que ejecuta el grafo de LangGraph con
+`RuleBasedClassifier` y `MockLLMProvider.default()`. `ChatResponse` expone estado, intención, confianza,
 respuesta, plan y datos.
 
 ## Scripts y procedimientos

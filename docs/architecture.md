@@ -144,17 +144,18 @@ Las cinco tablas existen. `campaigns`, `ads` y `ad_insights` viven en
 
 ## Chat offline (sin Redis)
 
-El chat actual es stateless y no usa Redis ni LangGraph. La secuencia es explícita en
-`ai/chat.py`:
+El chat actual es stateless y no usa Redis. LangGraph orquesta la secuencia; el grafo
+se compila una vez y la sesión de BD se pasa en la configuración de cada invocación:
 
 ```text
 mensaje
+  → LangGraph: classify_intent → route_request
   → RuleBasedClassifier (ai/jev/classifier.py)
   → MockLLMProvider (ai/llm/mock.py) propone un QueryPlan
   → parse_query_plan (ai/jev/plans.py, catálogo cerrado)
   → validate_query_plan (ai/jev/policies.py)
   → execute_query_plan (services de analytics y marketing)
-  → render_reply (plantillas con datos validados)
+  → generate_response: render_reply (plantillas con datos validados)
 ```
 
 - `POST /api/v1/chat` es el único endpoint nuevo: `api/v1/endpoints/chat.py`.
@@ -164,7 +165,9 @@ mensaje
   métricas no ordenables, nombre de campaña).
 - La respuesta se construye con plantillas a partir de los datos ya calculados, de
   modo que el texto no puede inventar cifras.
-- Redis, tablas de conversaciones y LangGraph quedan para una fase posterior; ver
+- El estado tipado `ChatState` viaja por los nodos; no hay checkpointer ni memoria
+  entre peticiones.
+- Redis y las tablas de conversaciones quedan para una fase posterior; ver
   [`chat.md`](chat.md) y el ADR `docs/decisions/0001-offline-llm-mocks.md`.
 
 ## Principios de diseño
