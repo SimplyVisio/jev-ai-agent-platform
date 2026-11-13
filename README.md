@@ -10,10 +10,10 @@ cálculos de métricas son deterministas y deben funcionar con el chatbot apagad
 
 ## Estado
 
-Fases 1 a 4 completadas: API FastAPI con configuración tipada, autenticación por API
-key contra PostgreSQL, migraciones con Alembic y el modelo de marketing (`campaigns`,
-`ads` y `ad_insights`). El CRUD, las métricas y la capa de IA llegan en las fases
-siguientes.
+Fases 1 a 5 completadas: API FastAPI con configuración tipada, autenticación por API
+key contra PostgreSQL, migraciones con Alembic, modelo de marketing (`campaigns`,
+`ads` y `ad_insights`) y CRUD de campañas y anuncios. Las métricas y la capa de IA
+llegan en las fases siguientes.
 
 Consulta el roadmap y las decisiones del proyecto en [`AGENTS.md`](AGENTS.md).
 
@@ -70,10 +70,17 @@ contenedor del backend. Los tests usan testcontainers y no dependen de esta red.
 |---|---|---|
 | `GET /health` | No | Estado del servicio |
 | `GET /api/v1/auth/me` | `X-API-Key` | Organización asociada a la clave |
+| `GET/POST /api/v1/campaigns` | `X-API-Key` | Listar / crear campañas |
+| `GET/PATCH/DELETE /api/v1/campaigns/{id}` | `X-API-Key` | Consultar / actualizar / archivar |
+| `GET/POST /api/v1/campaigns/{id}/ads` | `X-API-Key` | Listar / crear anuncios |
+| `GET/PATCH/DELETE /api/v1/campaigns/{id}/ads/{ad_id}` | `X-API-Key` | Consultar / actualizar / archivar |
 
 Las claves se guardan solo como hash SHA-256 y se muestran una única vez al crearlas.
-En esta fase se crean con `scripts/create_api_key.py`; el CRUD administrativo llega
-más adelante.
+En esta fase se crean con `scripts/create_api_key.py`.
+
+Los listados aceptan `limit` (1–100, por defecto 50), `offset` y filtros de estado u
+objetivo. `DELETE` archiva el recurso (`status=archived`) sin borrar anuncios ni
+métricas.
 
 El esquema OpenAPI en `/openapi.json` es el contrato fuente de la API. Si más adelante
 se construye un frontend TypeScript, sus tipos se generarán desde ese esquema; no se

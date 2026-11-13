@@ -41,7 +41,7 @@ Principio central:
 
 ## 3. Estado actual del repositorio
 
-Fases 1, 2, 3 y 4 completadas (2026-11-13): estructura base, tooling, CI, documentación, infraestructura local, API FastAPI, autenticación contra PostgreSQL y modelo de marketing.
+Fases 1, 2, 3, 4 y 5 completadas (2026-11-13): estructura base, tooling, CI, documentación, infraestructura local, API FastAPI, autenticación contra PostgreSQL, modelo de marketing y CRUD de campañas y anuncios.
 
 ```
 jev-ai/
@@ -75,7 +75,7 @@ jev-ai/
 
 - Paquete raíz: `jev_ai` (importar como `from jev_ai.modules.analytics import ...`).
 - Runtime: `fastapi`, `uvicorn`, `pydantic-settings`, `sqlalchemy[asyncio]`, `asyncpg` y `alembic`. Dev: `ruff`, `pytest`, `pytest-asyncio`, `httpx2` y `testcontainers[postgres]`.
-- API actual: `GET /health` (pública) y `GET /api/v1/auth/me` (protegida con `X-API-Key`).
+- API actual: `GET /health` (pública), `GET /api/v1/auth/me` y CRUD de campañas y anuncios bajo `/api/v1/campaigns` (protegidos con `X-API-Key`).
 - Esquema migrado: `organizations`, `api_keys`, `campaigns`, `ads` y `ad_insights`. La capa de IA llega en el hito 2.
 - Tests de integración con PostgreSQL real vía testcontainers; requieren Docker.
 - CI configurado en `.github/workflows/ci.yml`; todavía no hay remoto en GitHub.
@@ -320,14 +320,18 @@ Versionada bajo `/api/v1`. Paginación, filtros y excepciones HTTP consistentes.
 | Endpoint | Función |
 |---|---|
 | `GET /health` | Estado del servicio |
-| `GET /campaigns`, `GET /campaigns/{id}` | Listar / consultar campañas |
-| `GET /ads` | Listar anuncios |
+| `GET/POST /campaigns` | Listar / crear campañas |
+| `GET/PATCH/DELETE /campaigns/{id}` | Consultar / actualizar / archivar campaña |
+| `GET/POST /campaigns/{id}/ads` | Listar / crear anuncios de una campaña |
+| `GET/PATCH/DELETE /campaigns/{id}/ads/{ad_id}` | Consultar / actualizar / archivar anuncio |
 | `GET /analytics/overview` | Resumen general |
 | `GET /analytics/campaigns` | Rendimiento por campaña |
 | `GET /analytics/ads` | Rendimiento por anuncio |
 | `GET /analytics/trends` | Evolución por periodo |
 | `POST /conversations` | Crear conversación |
 | `POST /conversations/{id}/messages` | Enviar mensaje al chatbot |
+
+Los listados aceptan `limit` (1–100, por defecto 50), `offset` y filtros de estado/objetivo. `DELETE` archiva (`status=archived`), no borra datos. Los anuncios se anidan bajo su campaña.
 
 ---
 
@@ -459,5 +463,6 @@ Evolución del proyecto, para no repetir debates:
 18. **Infraestructura interna (2026-11-12):** el backend corre en Compose y PostgreSQL/Redis dejan de publicar puertos. Solo la API se expone en `127.0.0.1:${BACKEND_PORT}`. La red `data` es interna; `DATABASE_URL` la construye Compose y migraciones/scripts se ejecutan dentro del contenedor. El objetivo es que ningún proceso del host acceda directamente a la base de datos.
 19. **Contratos TypeScript pospuestos (2026-11-12):** se descartó el espejo manual en `contracts/` porque duplicaba los DTO de Pydantic sin existir aún un frontend. Pydantic/OpenAPI siguen siendo la fuente de verdad; si se construye frontend, los tipos se generarán desde `/openapi.json`.
 20. **Modelo de marketing (2026-11-13):** `campaigns`, `ads` y `ad_insights` con `organization_id` desnormalizado. Enums como `VARCHAR` + `StrEnum` en Python (sin `ENUM` nativo). `ad_insights` usa PK subrogada `id` + `UNIQUE(ad_id, date)`, índice `(organization_id, date)`, checks de no negatividad y `NUMERIC(12,2)`/`Decimal` para dinero. Borrado en cascada. Sin `external_id` de Meta hasta la integración real.
+21. **CRUD de marketing (2026-11-13):** endpoints anidados (`/campaigns/{id}/ads`), PATCH parcial y `DELETE` que archiva (`status=archived`) sin borrar anuncios ni métricas. Listados con `limit`/`offset` y filtros de estado/objetivo. Toda consulta filtra por el `organization_id` autenticado; un id ajeno devuelve `404`. Los errores de recurso ausente se mapean con un handler global a `404`.
 
 Cuando se tome una decisión nueva, agrégala aquí con fecha.
