@@ -164,6 +164,57 @@ en `create_app` lo convierte en `404` con `{"detail": "..."}`.
 | `PATCH /api/v1/campaigns/{id}/ads/{ad_id}` | Actualizar anuncio |
 | `DELETE /api/v1/campaigns/{id}/ads/{ad_id}` | Archivar anuncio |
 
+## Analítica
+
+### Schemas (`analytics/schemas.py`)
+
+| Schema | Uso |
+|---|---|
+| `DateRange` | Query obligatoria `date_from`/`date_to`; valida el orden |
+| `TrendGranularity` | `day`, `week` o `month` |
+| `BaseMetrics` | Ocho métricas base; `reach` puede ser `null` |
+| `Metrics` | Métricas base más `frequency`, `ctr`, `cpc`, `cpm`, `cpl`, `conversion_rate` y `roas` |
+| `OverviewRead` | `Metrics` más el rango consultado |
+| `CampaignPerformance` | Id, nombre y métricas de una campaña |
+| `AdPerformance` | Id, nombre, campaña y métricas de un anuncio |
+| `TrendPoint` | Periodo (`period_start`/`period_end`) y métricas |
+
+Los importes son `Decimal` y se serializan como cadena. Los ratios son `float`
+redondeados a seis decimales o `null` si el denominador es cero.
+
+### Repository (`analytics/repository.py`)
+
+Devuelve dataclasses (`BaseAggregate`, `CampaignAggregate`, `AdAggregate`,
+`TrendAggregate`) con sumas base y sin calcular ratios.
+
+| Función | Responsabilidad |
+|---|---|
+| `get_overview` | Suma todas las filas de la organización en el rango |
+| `list_campaigns` | Agrupa por campaña; ordena por gasto |
+| `list_ads` | Agrupa por anuncio; filtro opcional de campaña |
+| `list_trends` | Agrupa por día, semana o mes |
+
+Todas las consultas filtran por `AdInsight.organization_id` y por el rango inclusivo.
+
+### Service (`analytics/service.py`)
+
+| Función | Responsabilidad |
+|---|---|
+| `calculate_metrics` | Deriva ratios desde sumas base; evita promediar ratios |
+| `get_overview` | Construye `OverviewRead`; `reach` siempre `null` |
+| `list_campaign_performance` | Convierte agregados por campaña en schemas |
+| `list_ad_performance` | Informa `reach`/`frequency` solo si el rango es de un día |
+| `list_trends` | Calcula el fin de cada periodo y lo recorta al rango |
+
+### Endpoints
+
+| Método y ruta | Función |
+|---|---|
+| `GET /api/v1/analytics/overview` | Resumen de la organización |
+| `GET /api/v1/analytics/campaigns` | Rendimiento por campaña |
+| `GET /api/v1/analytics/ads` | Rendimiento por anuncio |
+| `GET /api/v1/analytics/trends` | Serie temporal por periodo |
+
 ## Capa HTTP
 
 ### `OrganizationContext`

@@ -94,6 +94,28 @@ las consultas de negocio filtran por ese `organization_id`.
 - La capa de servicio delimita transacciones y lanza `MarketingNotFoundError`; un
   handler global lo convierte en `404`.
 
+## Analítica
+
+| Endpoint | Agregación |
+|---|---|
+| `GET /api/v1/analytics/overview` | Toda la organización |
+| `GET /api/v1/analytics/campaigns` | Por campaña |
+| `GET /api/v1/analytics/ads` | Por anuncio; filtro opcional `campaign_id` |
+| `GET /api/v1/analytics/trends` | Por `day`, `week` o `month` |
+
+- `date_from`/`date_to` son inclusivos y obligatorios; el rango invertido devuelve
+  `422`.
+- El repositorio solo suma métricas base; el servicio calcula ratios después. Nunca
+  se promedian ratios diarios.
+- `reach`/`frequency` solo se exponen cuando son exactos. En `overview`, `campaigns`
+  y `trends` valen `null`; en `ads`, solo con un rango de un día.
+- Los periodos de `trends` se recortan al rango solicitado.
+- Los importes se serializan como cadena (`Decimal`); los ratios como número
+  redondeado a seis decimales.
+- Las entidades archivadas se incluyen si tienen métricas; las que no tienen filas
+  en `ad_insights` no aparecen en los listados.
+- Fórmulas y reglas completas: [`metrics.md`](metrics.md).
+
 ## Modelo de datos
 
 ```text
