@@ -10,10 +10,10 @@ cálculos de métricas son deterministas y deben funcionar con el chatbot apagad
 
 ## Estado
 
-Fases 1 a 5 completadas: API FastAPI con configuración tipada, autenticación por API
+Fases 1 a 6 completadas: API FastAPI con configuración tipada, autenticación por API
 key contra PostgreSQL, migraciones con Alembic, modelo de marketing (`campaigns`,
-`ads` y `ad_insights`) y CRUD de campañas y anuncios. Las métricas y la capa de IA
-llegan en las fases siguientes.
+`ads` y `ad_insights`), CRUD de campañas y anuncios y API de analítica con métricas
+agregadas. La capa de IA llega en el segundo hito.
 
 Consulta el roadmap y las decisiones del proyecto en [`AGENTS.md`](AGENTS.md).
 
@@ -74,6 +74,10 @@ contenedor del backend. Los tests usan testcontainers y no dependen de esta red.
 | `GET/PATCH/DELETE /api/v1/campaigns/{id}` | `X-API-Key` | Consultar / actualizar / archivar |
 | `GET/POST /api/v1/campaigns/{id}/ads` | `X-API-Key` | Listar / crear anuncios |
 | `GET/PATCH/DELETE /api/v1/campaigns/{id}/ads/{ad_id}` | `X-API-Key` | Consultar / actualizar / archivar |
+| `GET /api/v1/analytics/overview` | `X-API-Key` | Resumen de la organización |
+| `GET /api/v1/analytics/campaigns` | `X-API-Key` | Rendimiento por campaña |
+| `GET /api/v1/analytics/ads` | `X-API-Key` | Rendimiento por anuncio |
+| `GET /api/v1/analytics/trends` | `X-API-Key` | Evolución por día, semana o mes |
 
 Las claves se guardan solo como hash SHA-256 y se muestran una única vez al crearlas.
 En esta fase se crean con `scripts/create_api_key.py`.
@@ -81,6 +85,10 @@ En esta fase se crean con `scripts/create_api_key.py`.
 Los listados aceptan `limit` (1–100, por defecto 50), `offset` y filtros de estado u
 objetivo. `DELETE` archiva el recurso (`status=archived`) sin borrar anuncios ni
 métricas.
+
+Los endpoints de analítica requieren `date_from` y `date_to` (inclusivos). Las
+fórmulas, la regla de sumar métricas base antes de calcular ratios y el tratamiento
+de `reach` están documentados en [`docs/metrics.md`](docs/metrics.md).
 
 El esquema OpenAPI en `/openapi.json` es el contrato fuente de la API. Si más adelante
 se construye un frontend TypeScript, sus tipos se generarán desde ese esquema; no se

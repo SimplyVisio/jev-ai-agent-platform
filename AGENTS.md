@@ -41,7 +41,7 @@ Principio central:
 
 ## 3. Estado actual del repositorio
 
-Fases 1, 2, 3, 4 y 5 completadas (2026-11-13): estructura base, tooling, CI, documentación, infraestructura local, API FastAPI, autenticación contra PostgreSQL, modelo de marketing y CRUD de campañas y anuncios.
+Fases 1, 2, 3, 4, 5 y 6 completadas (2026-11-13): estructura base, tooling, CI, documentación, infraestructura local, API FastAPI, autenticación contra PostgreSQL, modelo de marketing, CRUD de campañas y anuncios y API de analítica con métricas agregadas.
 
 ```
 jev-ai/
@@ -56,7 +56,7 @@ jev-ai/
 ├── alembic.ini
 ├── alembic/                   # migraciones
 ├── compose.yaml               # backend + PostgreSQL 17 + Redis 7
-├── docs/{architecture,code-reference}.md
+├── docs/{architecture,code-reference,metrics}.md
 ├── pyproject.toml
 ├── scripts/create_api_key.py  # crea organización + API key
 ├── uv.lock
@@ -69,13 +69,14 @@ jev-ai/
 │       ├── infrastructure/    # base de datos y sesiones
 │       └── modules/
 │           ├── organizations/ # Organization y ApiKey
-│           └── marketing/     # Campaign, Ad y AdInsight
+│           ├── marketing/     # Campaign, Ad y AdInsight
+│           └── analytics/     # Métricas agregadas y ratios
 └── tests/{unit,integration,e2e}/
 ```
 
 - Paquete raíz: `jev_ai` (importar como `from jev_ai.modules.analytics import ...`).
 - Runtime: `fastapi`, `uvicorn`, `pydantic-settings`, `sqlalchemy[asyncio]`, `asyncpg` y `alembic`. Dev: `ruff`, `pytest`, `pytest-asyncio`, `httpx2` y `testcontainers[postgres]`.
-- API actual: `GET /health` (pública), `GET /api/v1/auth/me` y CRUD de campañas y anuncios bajo `/api/v1/campaigns` (protegidos con `X-API-Key`).
+- API actual: `GET /health` (pública), `GET /api/v1/auth/me`, CRUD bajo `/api/v1/campaigns` y analítica bajo `/api/v1/analytics` (`overview`, `campaigns`, `ads`, `trends`), protegidos con `X-API-Key`.
 - Esquema migrado: `organizations`, `api_keys`, `campaigns`, `ads` y `ad_insights`. La capa de IA llega en el hito 2.
 - Tests de integración con PostgreSQL real vía testcontainers; requieren Docker.
 - CI configurado en `.github/workflows/ci.yml`; todavía no hay remoto en GitHub.
@@ -233,6 +234,7 @@ Reglas:
 - **ROAS ≠ ROI.** ROI real requiere beneficio/costos reales, no solo ingresos atribuidos. Dejar ROI fuera del MVP (exponer ROAS), o agregar un campo opcional de costo de producto. Mejor omitir un indicador que mostrar uno engañoso.
 - Distinguir visitas registradas por Meta de eventos recolectados en nuestra propia landing.
 - Tests obligatorios de casos límite (CTR con 0 impresiones, ROAS con 0 gasto, agregación correcta, etc.).
+- Implementación y contrato vigente: `docs/metrics.md`. Los ratios se devuelven como `float` redondeado a 6 decimales; el dinero sigue siendo `Decimal` y se serializa como cadena.
 
 ### Métricas por grupo (contexto de negocio)
 - **Anuncios:** Impressions, Reach, Frequency, Clicks, CTR, CPC, CPM, Amount Spent.
@@ -464,5 +466,6 @@ Evolución del proyecto, para no repetir debates:
 19. **Contratos TypeScript pospuestos (2026-11-12):** se descartó el espejo manual en `contracts/` porque duplicaba los DTO de Pydantic sin existir aún un frontend. Pydantic/OpenAPI siguen siendo la fuente de verdad; si se construye frontend, los tipos se generarán desde `/openapi.json`.
 20. **Modelo de marketing (2026-11-13):** `campaigns`, `ads` y `ad_insights` con `organization_id` desnormalizado. Enums como `VARCHAR` + `StrEnum` en Python (sin `ENUM` nativo). `ad_insights` usa PK subrogada `id` + `UNIQUE(ad_id, date)`, índice `(organization_id, date)`, checks de no negatividad y `NUMERIC(12,2)`/`Decimal` para dinero. Borrado en cascada. Sin `external_id` de Meta hasta la integración real.
 21. **CRUD de marketing (2026-11-13):** endpoints anidados (`/campaigns/{id}/ads`), PATCH parcial y `DELETE` que archiva (`status=archived`) sin borrar anuncios ni métricas. Listados con `limit`/`offset` y filtros de estado/objetivo. Toda consulta filtra por el `organization_id` autenticado; un id ajeno devuelve `404`. Los errores de recurso ausente se mapean con un handler global a `404`.
+22. **API de analítica (2026-11-13):** `overview`, `campaigns`, `ads` y `trends` bajo `/api/v1/analytics`, con `date_from`/`date_to` inclusivos y obligatorios. Se suman métricas base y luego se calculan ratios; denominador cero devuelve `null`. `reach`/`frequency` solo se informan cuando son exactos (un anuncio y un día en `ads`); en agregados y tendencias son `null` para no sobreestimar personas únicas. Tendencias con `day|week|month` y periodos recortados al rango. Importes como `Decimal` serializado en cadena; ratios `float` a 6 decimales. ROI omitido; solo ROAS.
 
 Cuando se tome una decisión nueva, agrégala aquí con fecha.
