@@ -41,7 +41,7 @@ Principio central:
 
 ## 3. Estado actual del repositorio
 
-Fases 1, 2 y 3 completadas (2026-11-12): estructura base, tooling, CI, documentación, infraestructura local, API FastAPI y autenticación contra PostgreSQL.
+Fases 1, 2, 3 y 4 completadas (2026-11-13): estructura base, tooling, CI, documentación, infraestructura local, API FastAPI, autenticación contra PostgreSQL y modelo de marketing.
 
 ```
 jev-ai/
@@ -68,14 +68,15 @@ jev-ai/
 │       ├── api/               # routers y dependencias
 │       ├── infrastructure/    # base de datos y sesiones
 │       └── modules/
-│           └── organizations/ # Organization y ApiKey
+│           ├── organizations/ # Organization y ApiKey
+│           └── marketing/     # Campaign, Ad y AdInsight
 └── tests/{unit,integration,e2e}/
 ```
 
 - Paquete raíz: `jev_ai` (importar como `from jev_ai.modules.analytics import ...`).
 - Runtime: `fastapi`, `uvicorn`, `pydantic-settings`, `sqlalchemy[asyncio]`, `asyncpg` y `alembic`. Dev: `ruff`, `pytest`, `pytest-asyncio`, `httpx2` y `testcontainers[postgres]`.
 - API actual: `GET /health` (pública) y `GET /api/v1/auth/me` (protegida con `X-API-Key`).
-- Esquema inicial migrado: `organizations` y `api_keys`. El modelo de marketing llega en la fase 4.
+- Esquema migrado: `organizations`, `api_keys`, `campaigns`, `ads` y `ad_insights`. La capa de IA llega en el hito 2.
 - Tests de integración con PostgreSQL real vía testcontainers; requieren Docker.
 - CI configurado en `.github/workflows/ci.yml`; todavía no hay remoto en GitHub.
 - Infra local: el **backend corre en Compose**. Solo la API se publica en `127.0.0.1:8000`; PostgreSQL y Redis viven en la red interna `data` sin puertos en el host.
@@ -457,5 +458,6 @@ Evolución del proyecto, para no repetir debates:
 17. **BD y auth adelantadas (2026-11-12):** por decisión del usuario, la fase 3 incluye SQLAlchemy async, Alembic, `organizations` y `api_keys`; la fase 4 queda para el modelo de marketing. Auth con cabecera `X-API-Key`, hash SHA-256 y `hmac.compare_digest`. Tests de integración con testcontainers/PostgreSQL 17 y `httpx2`.
 18. **Infraestructura interna (2026-11-12):** el backend corre en Compose y PostgreSQL/Redis dejan de publicar puertos. Solo la API se expone en `127.0.0.1:${BACKEND_PORT}`. La red `data` es interna; `DATABASE_URL` la construye Compose y migraciones/scripts se ejecutan dentro del contenedor. El objetivo es que ningún proceso del host acceda directamente a la base de datos.
 19. **Contratos TypeScript pospuestos (2026-11-12):** se descartó el espejo manual en `contracts/` porque duplicaba los DTO de Pydantic sin existir aún un frontend. Pydantic/OpenAPI siguen siendo la fuente de verdad; si se construye frontend, los tipos se generarán desde `/openapi.json`.
+20. **Modelo de marketing (2026-11-13):** `campaigns`, `ads` y `ad_insights` con `organization_id` desnormalizado. Enums como `VARCHAR` + `StrEnum` en Python (sin `ENUM` nativo). `ad_insights` usa PK subrogada `id` + `UNIQUE(ad_id, date)`, índice `(organization_id, date)`, checks de no negatividad y `NUMERIC(12,2)`/`Decimal` para dinero. Borrado en cascada. Sin `external_id` de Meta hasta la integración real.
 
 Cuando se tome una decisión nueva, agrégala aquí con fecha.

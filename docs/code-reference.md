@@ -75,6 +75,41 @@ Credencial de una organización. Campos: `id`, `organization_id`, `key_hash` y
 Consulta la entidad `ApiKey` por hash. Devuelve `None` si no existe. La verificación en
 tiempo constante (`hmac.compare_digest`) se hace en la capa HTTP, no en el repositorio.
 
+## Modelo de marketing
+
+Vive en `modules/marketing/models.py`. Solo métricas base; los ratios se calculan en
+analytics.
+
+### Enums de vocabulario
+
+`CampaignObjective`, `CampaignStatus` y `AdStatus` son `StrEnum`. Las columnas son
+`VARCHAR`, así que PostgreSQL no valida el catálogo; lo harán los schemas de la fase 5.
+
+### `Campaign`
+
+Campaña de una organización: `id`, `organization_id`, `name`, `objective`, `status`
+(por defecto `active`) y `created_at`. Relación uno-a-muchos con `Ad`, borrado en
+cascada.
+
+### `Ad`
+
+Anuncio de una campaña: `id`, `campaign_id`, `organization_id` desnormalizado, `name`,
+`status` y `created_at`. Relación uno-a-muchos con `AdInsight`, borrado en cascada.
+
+### `AdInsight`
+
+Métricas base de un anuncio para un día: `id`, `ad_id`, `organization_id`, `date` y las
+ocho métricas base. Restricciones:
+
+| Restricción | Propósito |
+|---|---|
+| `UNIQUE(ad_id, date)` | Una fila por anuncio y día |
+| `ix_ad_insights_organization_id_date` | Filtrar por organización y rango de fechas |
+| `ix_ad_insights_ad_id` | Consultar métricas de un anuncio |
+| `ck_ad_insights_*` | Impedir métricas negativas |
+
+`spend` y `revenue` usan `NUMERIC(12,2)` y se leen como `Decimal`.
+
 ## Capa HTTP
 
 ### `OrganizationContext`
