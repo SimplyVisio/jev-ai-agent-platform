@@ -80,6 +80,20 @@ como hash SHA-256 en la tabla `api_keys`; el texto plano solo se muestra al crea
 dependencia de FastAPI resuelve la organización y la inyecta en los endpoints. Todas
 las consultas de negocio filtran por ese `organization_id`.
 
+## CRUD y convenciones HTTP
+
+- Campañas: `/api/v1/campaigns` y `/api/v1/campaigns/{id}`.
+- Anuncios anidados: `/api/v1/campaigns/{id}/ads` y
+  `/api/v1/campaigns/{id}/ads/{ad_id}`.
+- Los listados usan `limit` (1–100, por defecto 50), `offset` y filtros opcionales de
+  `status`/`objective`. Sin filtro de estado se incluyen también las archivadas.
+- `PATCH` aplica cambios parciales; los campos omitidos o `null` no se modifican.
+- `DELETE` archiva (`status=archived`) de forma idempotente. No borra anuncios ni
+  métricas históricas.
+- Un recurso de otra organización se trata como inexistente: `404`.
+- La capa de servicio delimita transacciones y lanza `MarketingNotFoundError`; un
+  handler global lo convierte en `404`.
+
 ## Modelo de datos
 
 ```text

@@ -68,3 +68,7 @@ async def get_current_organization(
         raise _unauthorized()
 
     return OrganizationContext(organization_id=record.organization_id)
+
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+OrganizationDep = Annotated[OrganizationContext, Depends(get_current_organization)]

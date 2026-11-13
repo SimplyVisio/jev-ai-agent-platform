@@ -110,6 +110,60 @@ ocho métricas base. Restricciones:
 
 `spend` y `revenue` usan `NUMERIC(12,2)` y se leen como `Decimal`.
 
+## CRUD de marketing
+
+### Schemas (`schemas.py`)
+
+| Schema | Uso |
+|---|---|
+| `CampaignCreate` / `CampaignUpdate` | Entrada para crear / actualizar campaña |
+| `CampaignRead` | Respuesta de campaña |
+| `AdCreate` / `AdUpdate` | Entrada para crear / actualizar anuncio |
+| `AdRead` | Respuesta de anuncio |
+
+`Name` normaliza espacios y exige entre 1 y 120 caracteres. Los enums de los schemas
+son los mismos `StrEnum` del modelo. `CampaignUpdate` y `AdUpdate` son parciales.
+
+### Repository (`repository.py`)
+
+| Función | Responsabilidad |
+|---|---|
+| `list_campaigns` | Filtra por organización, estado y objetivo; ordena y pagina |
+| `get_campaign` | Busca una campaña por id y organización |
+| `list_ads` | Filtra anuncios por organización, campaña y estado |
+| `get_ad` | Busca un anuncio por id, campaña y organización |
+
+Todas las consultas incluyen `organization_id`; no existe una búsqueda global por id.
+
+### Service (`service.py`)
+
+| Función | Regla |
+|---|---|
+| `list_campaigns` / `get_campaign` | Lectura acotada a la organización |
+| `create_campaign` / `update_campaign` | Valida vía schemas y hace commit |
+| `archive_campaign` | Cambia `status` a `archived`; idempotente |
+| `list_ads` / `get_ad` | Exige que la campaña pertenezca a la organización |
+| `create_ad` / `update_ad` | Crea o modifica anuncios dentro de la campaña |
+| `archive_ad` | Cambia `status` a `archived`; idempotente |
+
+`MarketingNotFoundError` representa un recurso ausente o ajeno. El handler registrado
+en `create_app` lo convierte en `404` con `{"detail": "..."}`.
+
+### Endpoints
+
+| Método y ruta | Función |
+|---|---|
+| `GET /api/v1/campaigns` | Listar campañas |
+| `POST /api/v1/campaigns` | Crear campaña |
+| `GET /api/v1/campaigns/{id}` | Consultar campaña |
+| `PATCH /api/v1/campaigns/{id}` | Actualizar campaña |
+| `DELETE /api/v1/campaigns/{id}` | Archivar campaña |
+| `GET /api/v1/campaigns/{id}/ads` | Listar anuncios |
+| `POST /api/v1/campaigns/{id}/ads` | Crear anuncio |
+| `GET /api/v1/campaigns/{id}/ads/{ad_id}` | Consultar anuncio |
+| `PATCH /api/v1/campaigns/{id}/ads/{ad_id}` | Actualizar anuncio |
+| `DELETE /api/v1/campaigns/{id}/ads/{ad_id}` | Archivar anuncio |
+
 ## Capa HTTP
 
 ### `OrganizationContext`
@@ -148,8 +202,8 @@ diagnóstico y la prueba viva del contrato de autenticación.
 ### `create_app(settings=None)`
 
 Factory de la aplicación. Si no recibe `Settings`, usa `get_settings()`. Define el
-lifespan que crea y libera el engine, y registra los routers. Uvicorn la invoca con
-`--factory`.
+lifespan que crea y libera el engine, registra los routers y mapea
+`MarketingNotFoundError` a `404`. Uvicorn la invoca con `--factory`.
 
 ## Scripts y procedimientos
 
