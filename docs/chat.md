@@ -113,12 +113,16 @@ JEV_API_KEY="jev_..." python scripts/chat_cli.py --show-plan
 
 Escribe `salir` para terminar. `--dry-run` valida el plan sin ejecutarlo.
 
-## Dataset de evaluación
+## Datasets
 
-[`mocks/datasets/query_plans.json`](../mocks/datasets/query_plans.json) contiene
-mensajes, intención esperada y plan esperado. El test
-`tests/unit/test_mock_dataset.py` comprueba que clasificador, traductor y políticas
-sigan coincidiendo con el dataset.
+- [`mocks/datasets/query_plans.json`](../mocks/datasets/query_plans.json): mensajes,
+  intención esperada y plan esperado. El test `tests/unit/test_mock_dataset.py`
+  comprueba que clasificador, traductor y políticas sigan coincidiendo.
+- [`mocks/datasets/intents.json`](../mocks/datasets/intents.json): 72 mensajes para
+  medir accuracy, precision, recall y F1. Se ejecuta con
+  `uv run python scripts/evaluate_classifier.py` y en CI.
+
+Ver [`evaluation.md`](evaluation.md) para métricas, umbrales y limitaciones.
 
 ## Limitaciones actuales
 

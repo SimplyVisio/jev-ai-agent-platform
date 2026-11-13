@@ -17,8 +17,10 @@ agregadas.
 
 Además, hay un **chat offline** que traduce lenguaje natural a un `QueryPlan`
 validado y lo ejecuta con SQLAlchemy. Funciona sin API key de ningún proveedor LLM y
-sin túnel: el LLM es un mock determinista y el flujo se orquesta con LangGraph. Redis
-y la memoria de conversación quedan para la siguiente fase.
+sin túnel: el LLM es un mock determinista y el flujo se orquesta con LangGraph. El
+clasificador se evalúa con un dataset versionado (accuracy, precision, recall y F1) y
+CI falla si baja de los umbrales. Redis y la memoria de conversación quedan para la
+siguiente fase.
 
 Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 
@@ -38,6 +40,7 @@ Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 | LangGraph | Orquestación del flujo de chat |
 | LLM mock determinista | Capa de IA offline (QueryPlan + políticas JEV AI) |
 | LLM real | Proveedor futuro; misma interfaz que el mock |
+| Dataset + métricas | Evaluación del clasificador en CI |
 
 ## Requisitos
 
@@ -161,6 +164,7 @@ Los contenedores tienen límites de recursos: PostgreSQL 1 CPU / 512 MB, Redis
 
 ```bash
 uv run pytest                              # tests (requiere Docker por testcontainers)
+uv run python scripts/evaluate_classifier.py  # accuracy/F1 del clasificador
 uv run lint-imports                        # contratos de dependencias entre capas
 uv run ruff check .                        # lint
 uv run ruff format --check .               # comprobar formato
@@ -198,6 +202,7 @@ Dockerfile           imagen del backend
 - [`docs/architecture.md`](docs/architecture.md): arquitectura del backend.
 - [`docs/api.md`](docs/api.md): contrato HTTP de todos los endpoints.
 - [`docs/chat.md`](docs/chat.md): flujo de chat, QueryPlan, políticas y mocks.
+- [`docs/evaluation.md`](docs/evaluation.md): dataset y métricas del clasificador.
 - [`docs/metrics.md`](docs/metrics.md): fórmulas y reglas de agregación.
 - [`docs/code-reference.md`](docs/code-reference.md): funciones, clases y contratos.
 - [`docs/decisions/`](docs/decisions): ADR de decisiones clave.

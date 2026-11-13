@@ -8,8 +8,14 @@ import re
 
 from jev_ai.ai.jev.intents import Intent, IntentClassifier, IntentResult
 
+_UNSUPPORTED = re.compile(
+    r"\b(elimina|eliminar|borra|borrar|pausa|pausar|crea|crear|actualiza|actualizar"
+    r"|cambia|cambiar|sube|subir|baja|bajar|ajusta|ajustar|env[ií]a|enviar"
+    r"|descarga|descargar|exporta|exportar|programa|programar|cancela|cancelar)\b",
+    re.IGNORECASE,
+)
 _COMPARE = re.compile(
-    r"\b(compara|comparar|comparaci[oó]n|comparativa|vs\.?|frente a|diferencia entre)\b",
+    r"\b(compar(?:a|ar|aci[oó]n|ativ[oa]|e|en|ando)|vs\.?|frente a|diferencia entre)\b",
     re.IGNORECASE,
 )
 _TOP_ADS = re.compile(
@@ -19,13 +25,16 @@ _TOP_ADS = re.compile(
 )
 _CAMPAIGN = re.compile(r"\bcampa[nñ]a\b", re.IGNORECASE)
 _HELP = re.compile(
-    r"\b(ayuda|help|hola|buenas|qu[eé] puedes hacer|comandos)\b",
+    r"\b(ayuda|help|hola|buenas|qu[eé] puedes hacer|comandos"
+    r"|c[oó]mo funciona(?:s)?|para qu[eé] sirves|qu[eé] sabes hacer)\b",
     re.IGNORECASE,
 )
 
 
 def classify_intent(message: str) -> IntentResult:
     """Clasifica un mensaje con reglas ordenadas por prioridad."""
+    if _UNSUPPORTED.search(message):
+        return IntentResult(Intent.UNKNOWN, 0.95, "unsupported_action")
     if _COMPARE.search(message):
         return IntentResult(Intent.COMPARE_PERIODS, 0.95, "compare_keyword")
     if _TOP_ADS.search(message):

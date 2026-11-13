@@ -14,13 +14,14 @@ responsabilidad tiene cada una. Se actualiza al cerrar cada fase.
 | `jev_ai/api/deps.py` | Sesión de BD y autenticación por API key |
 | `jev_ai/api/v1/endpoints/` | Endpoints HTTP |
 | `jev_ai/modules/organizations/` | Entidades y consultas de organizaciones |
-| `jev_ai/ai/jev/` | Intenciones, QueryPlan, clasificador y políticas |
+| `jev_ai/ai/jev/` | Intenciones, QueryPlan, clasificador, políticas y evaluación |
 | `jev_ai/ai/llm/` | `LLMProvider`, mock y traductor offline |
 | `jev_ai/ai/chat.py` | Orquestación del flujo de chat |
 | `jev_ai/infrastructure/database/` | Base declarativa, engine y sesiones |
 | `scripts/create_api_key.py` | Procedimiento de alta de organización y clave |
 | `scripts/seed.py` | Datos sintéticos reproducibles |
 | `scripts/chat_cli.py` | Cliente de chat por terminal |
+| `scripts/evaluate_classifier.py` | Evaluación del clasificador para CI |
 
 ## Configuración
 
@@ -246,6 +247,15 @@ Vive en `ai/jev/plans.py`. Es una unión discriminada por `operation`:
 Todas validan fechas y prohíben campos extra. `parse_query_plan` convierte el texto del
 LLM en un plan tipado y lanza `PlanParseError` si no cumple el contrato.
 
+### `evaluate_classifier`, `format_report` y `load_cases`
+
+`ai/jev/evaluation.py` mide accuracy, precision, recall, F1 macro y por intención,
+matriz de confusión y fallos. `IntentScore` y `EvaluationReport` son dataclasses
+inmutables. `load_cases` lee `mocks/datasets/intents.json`.
+
+`scripts/evaluate_classifier.py` imprime el informe y devuelve código 1 si accuracy o
+macro F1 bajan de los umbrales (`--min-accuracy`, `--min-macro-f1`). CI lo ejecuta.
+
 ### `validate_query_plan(plan, expected_intent)`
 
 Aplica políticas deterministas: coincidencia intención/operación, rango máximo de 366
@@ -379,6 +389,12 @@ rastro en el historial del shell; se recomienda omitir `--key`.
 Genera tres campañas y siete anuncios con métricas diarias reproducibles (semilla 42)
 del 1 de septiembre al 13 de noviembre de 2026. Sin `--reset` no duplica datos; con
 `--reset` borra solo las campañas de demo de esa organización. No crea API keys.
+
+### `evaluate_classifier.py`
+
+Carga el dataset, evalúa `RuleBasedClassifier` y falla el proceso si no alcanza los
+umbrales. Su valor está en detectar regresiones, no en estimar producción: el dataset
+está curado con el mismo vocabulario que las reglas.
 
 ### `scripts/chat_cli.py`
 
