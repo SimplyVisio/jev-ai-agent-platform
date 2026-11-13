@@ -17,8 +17,8 @@ agregadas.
 
 Además, hay un **chat offline** que traduce lenguaje natural a un `QueryPlan`
 validado y lo ejecuta con SQLAlchemy. Funciona sin API key de ningún proveedor LLM y
-sin túnel: el LLM es un mock determinista. Redis, memoria de conversación y LangGraph
-quedan para la siguiente fase.
+sin túnel: el LLM es un mock determinista y el flujo se orquesta con LangGraph. Redis
+y la memoria de conversación quedan para la siguiente fase.
 
 Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 
@@ -35,8 +35,9 @@ Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 | FastAPI + Pydantic | API REST |
 | SQLAlchemy async + Alembic + asyncpg | Persistencia y migraciones |
 | testcontainers | Tests de integración con PostgreSQL real |
+| LangGraph | Orquestación del flujo de chat |
 | LLM mock determinista | Capa de IA offline (QueryPlan + políticas JEV AI) |
-| LangGraph + LLM real | Capa de IA completa (fases siguientes) |
+| LLM real | Proveedor futuro; misma interfaz que el mock |
 
 ## Requisitos
 
@@ -177,7 +178,7 @@ docker compose up -d --build --wait        # reconstruir tras cambiar código o 
 src/jev_ai/          paquete de la aplicación
   api/               routers y dependencias HTTP
   modules/           dominios de negocio
-  ai/                capa de IA: JEV AI, LLM mock y chat
+  ai/                capa de IA: JEV AI, LLM mock, chat y workflows (LangGraph)
   infrastructure/    base de datos y sesiones
 alembic/             migraciones
 mocks/datasets/      dataset de mensajes e intenciones

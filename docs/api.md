@@ -55,9 +55,9 @@ Los endpoints de analítica exigen `date_from` y `date_to` inclusivos. `trends` 
 
 ## Chat
 
-`POST /api/v1/chat` es stateless: no guarda conversación ni usa Redis. El flujo es
-clasificar la intención, proponer un `QueryPlan`, validarlo con JEV AI y ejecutarlo con
-los servicios de analítica y marketing.
+`POST /api/v1/chat` es stateless: no guarda conversación ni usa Redis. LangGraph
+orquesta la clasificación de intención, la propuesta de `QueryPlan`, la validación con
+JEV AI y la ejecución con los servicios de analítica y marketing.
 
 ### Petición
 

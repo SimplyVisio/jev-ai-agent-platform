@@ -7,17 +7,24 @@ con pytest, Bruno o el cliente de terminal.
 ## Flujo
 
 ```text
-mensaje
-  → RuleBasedClassifier (JEV AI)
-  → MockLLMProvider / plan_builder (propone QueryPlan)
-  → parse_query_plan (Pydantic, catálogo cerrado)
-  → validate_query_plan (JEV AI)
-  → execute_query_plan (servicios de analytics y marketing)
-  → render_reply (plantilla con datos reales)
+START
+  → classify_intent       RuleBasedClassifier (JEV AI)
+  → route_request         help | clarify | plan
+  → propose_plan          MockLLMProvider / plan_builder + parse_query_plan
+  → validate_plan         validate_query_plan (JEV AI)
+  → execute_service       execute_query_plan (analytics + marketing)
+  → generate_response     render_reply (plantilla con datos reales)
+  → END
 ```
 
-`POST /api/v1/chat` no persiste conversaciones ni mensajes. La memoria, Redis y
-LangGraph quedan para una fase posterior.
+El grafo vive en `ai/workflows/graph.py` y se compila una sola vez en `ChatService`.
+La sesión de base de datos se pasa por invocación en
+`config["configurable"]["session"]`; el estado (`ChatState`) lleva el mensaje, la
+intención, la confianza, el plan, los datos, la respuesta, el estado y los errores.
+No hay checkpointer ni persistencia: cada petición empieza y termina en memoria.
+
+`POST /api/v1/chat` no persiste conversaciones ni mensajes. La memoria y Redis quedan
+para una fase posterior.
 
 ## Catálogo cerrado
 
@@ -54,6 +61,20 @@ Antes de ejecutar, `validate_query_plan` comprueba:
 
 La confianza del clasificador no concede permisos. El `organization_id` siempre sale
 del contexto autenticado.
+
+## Grafo y estado
+
+| Nodo | Responsabilidad |
+|---|---|
+| `classify_intent` | Clasifica el mensaje y guarda intención/confianza |
+| `help` / `clarify` / `error` | Cierran el flujo con el texto adecuado |
+| `propose_plan` | Pide el plan al LLM y lo parsea con Pydantic |
+| `validate_plan` | Aplica las políticas de JEV AI; corta en `dry_run` |
+| `execute_service` | Ejecuta el plan con la sesión y la organización autenticada |
+| `generate_response` | Redacta desde plantilla con los datos validados |
+
+Las rutas condicionales están en `ChatNodes.route_after_*`. Los nodos no calculan
+métricas ni permisos: delegan en los servicios existentes.
 
 ## Mock LLM
 
@@ -102,7 +123,8 @@ sigan coincidiendo con el dataset.
 ## Limitaciones actuales
 
 - Sin memoria de conversación ni tablas `conversations`/`messages`.
-- Sin LangGraph: el flujo es una secuencia explícita en `ChatService`.
+- Sin checkpointer: el grafo no guarda estado entre peticiones ni reanuda ejecuciones.
+- Sin memoria de conversación: cada mensaje se interpreta aislado.
 - Sin proveedor LLM real.
 - Las respuestas se generan con plantillas; el LLM solo propone el plan.
 - `compare_periods` compara el resumen de la organización, no una campaña concreta.
