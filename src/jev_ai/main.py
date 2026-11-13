@@ -4,7 +4,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.metadata import version
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from jev_ai.api.v1.endpoints.health import router as health_router
 from jev_ai.api.v1.router import api_router
@@ -13,6 +14,15 @@ from jev_ai.infrastructure.database.session import (
     create_database_engine,
     create_session_factory,
 )
+from jev_ai.modules.marketing.service import MarketingNotFoundError
+
+
+async def _marketing_not_found_handler(
+    _request: Request,
+    exc: MarketingNotFoundError,
+) -> JSONResponse:
+    """Convierte un recurso ausente en una respuesta 404 uniforme."""
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -44,4 +54,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(health_router)
     app.include_router(api_router, prefix="/api/v1")
+    app.add_exception_handler(
+        MarketingNotFoundError,
+        _marketing_not_found_handler,
+    )
     return app
