@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "description": "Casos reproducibles para el clasificador JEV AI y el traductor offline a QueryPlan.",
+  "reference_date": "2026-11-13",
+  "cases": [
+    {
+      "message": "¿Cuáles son los 5 mejores anuncios por ROAS en octubre de 2026?",
+      "intent": "top_ads_by_metric",
+      "expected_policy": "accepted",
+      "expected_plan": {
+        "operation": "top_ads_by_metric",
+        "metric": "roas",
+        "date_from": "2026-10-01",
+        "date_to": "2026-10-31",
+        "limit": 5
+      }
+    },
+    {
+      "message": "Top 3 anuncios por CPL en los últimos 7 días",
+      "intent": "top_ads_by_metric",
+      "expected_policy": "accepted",
+      "expected_plan": {
+        "operation": "top_ads_by_metric",
+        "metric": "cpl",
+        "date_from": "2026-11-07",
+        "date_to": "2026-11-13",
+        "limit": 3
+      }
+    },
+    {
+      "message": "Mejores anuncios por CTR este mes",
+      "intent": "top_ads_by_metric",
+      "expected_policy": "accepted",
+      "expected_plan": {
+        "operation": "top_ads_by_metric",
+        "metric": "ctr",
+        "date_from": "2026-11-01",
+        "date_to": "2026-11-13",
+        "limit": 5
+      }
+    },
+    {
+      "message": "Ranking de anuncios por conversión en septiembre de 2026",
+      "intent": "top_ads_by_metric",
+      "expected_policy": "accepted",
+      "expected_plan": {
+        "operation": "top_ads_by_metric",
+        "metric": "conversion_rate",
+        "date_from": "2026-09-01",
+        "date_to": "2026-09-30",
+        "limit": 5
+      }
+    },
+    {
+      "message": "Top 2 anuncios por alcance en octubre de 2026",
+      "intent": "top_ads_by_metric",
+      "expected_policy": "rejected",
+      "expected_plan": {
+        "operation": "top_ads_by_metric",
+        "metric": "reach",
+        "date_from": "2026-10-01",
+        "date_to": "2026-10-31",
+        "limit": 2
+      }
+    },
+    {
+      "message": "¿Cómo va la campaña \"Demo Prospecting\" en octubre de 2026?",
+      "intent": "campaign_performance",
+      "expected_policy": "accepted",
+      "expected_plan": {
+        "operation": "campaign_performance",
+        "campaign_name": "Demo Prospecting",
+        "date_from": "2026-10-01",
+        "date_to": "2026-10-31"
+      }
+    },
+    {
+      "message": "Resultados de la campaña Demo Retargeting este mes",
+      "intent": "campaign_performance",
+      "expected_policy": "accepted",
+      "expected_plan": {
+        "operation": "campaign_performance",
+        "campaign_name": "Demo Retargeting",
+        "date_from": "2026-11-01",
+        "date_to": "2026-11-13"
+      }
+    },
+    {
+      "message": "Compara este mes con el mes pasado",
+      "intent": "compare_periods",
+      "expected_policy": "accepted",
+      "expected_plan": {
+        "operation": "compare_periods",
+        "date_from": "2026-11-01",
+        "date_to": "2026-11-13",
+        "comparison_date_from": "2026-10-01",
+        "comparison_date_to": "2026-10-31"
+      }
+    },
+    {
+      "message": "Compara 2026-10-01 a 2026-10-31 con 2026-09-01 a 2026-09-30",
+      "intent": "compare_periods",
+      "expected_policy": "accepted",
+      "expected_plan": {
+        "operation": "compare_periods",
+        "date_from": "2026-10-01",
+        "date_to": "2026-10-31",
+        "comparison_date_from": "2026-09-01",
+        "comparison_date_to": "2026-09-30"
+      }
+    },
+    {
+      "message": "¿Qué puedes hacer?",
+      "intent": "help",
+      "expected_policy": "accepted",
+      "expected_plan": null
+    },
+    {
+      "message": "Hola",
+      "intent": "help",
+      "expected_policy": "accepted",
+      "expected_plan": null
+    },
+    {
+      "message": "Quiero saber algo",
+      "intent": "unknown",
+      "expected_policy": "accepted",
+      "expected_plan": null
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Analytics - Campaigns
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/analytics/campaigns?date_from=2026-10-01&date_to=2026-10-31
+  body: none
+  auth: none
+}
+
+headers {
+  X-API-Key: {{apiKey}}
+}

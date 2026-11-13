@@ -8,3 +8,18 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Tool caches and test artifacts
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Guía local del agente (no se versiona)
+AGENTS.md

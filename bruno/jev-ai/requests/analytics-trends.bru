@@ -1,0 +1,15 @@
+meta {
+  name: Analytics - Trends
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/v1/analytics/trends?date_from=2026-09-01&date_to=2026-11-13&granularity=week
+  body: none
+  auth: none
+}
+
+headers {
+  X-API-Key: {{apiKey}}
+}
