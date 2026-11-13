@@ -1,6 +1,37 @@
 name: jev-ai
 
 services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - edge
+      - data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -8,8 +39,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - data
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,8 +59,8 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    networks:
+      - data
     volumes:
       - redis_data:/data
     healthcheck:
@@ -43,6 +74,11 @@ services:
         limits:
           cpus: "0.5"
           memory: 256M
+
+networks:
+  edge:
+  data:
+    internal: true
 
 volumes:
   postgres_data:
