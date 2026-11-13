@@ -20,7 +20,7 @@ validado y lo ejecuta con SQLAlchemy. Funciona sin API key de ningún proveedor 
 sin túnel: el LLM es un mock determinista. Redis, memoria de conversación y LangGraph
 quedan para la siguiente fase.
 
-Consulta el roadmap y las decisiones del proyecto en [`AGENTS.md`](AGENTS.md).
+Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 
 ## Stack
 
@@ -194,7 +194,6 @@ Dockerfile           imagen del backend
 
 ## Documentación
 
-- [`AGENTS.md`](AGENTS.md): decisiones, reglas y roadmap.
 - [`docs/architecture.md`](docs/architecture.md): arquitectura del backend.
 - [`docs/api.md`](docs/api.md): contrato HTTP de todos los endpoints.
 - [`docs/chat.md`](docs/chat.md): flujo de chat, QueryPlan, políticas y mocks.
