@@ -14,9 +14,11 @@ responsabilidad tiene cada una. Se actualiza al cerrar cada fase.
 | `jev_ai/api/deps.py` | Sesión de BD y autenticación por API key |
 | `jev_ai/api/v1/endpoints/` | Endpoints HTTP |
 | `jev_ai/modules/organizations/` | Entidades y consultas de organizaciones |
+| `jev_ai/modules/conversations/` | Conversaciones, mensajes y transcript |
 | `jev_ai/ai/jev/` | Intenciones, QueryPlan, clasificador, políticas y evaluación |
 | `jev_ai/ai/llm/` | `LLMProvider`, mock y traductor offline |
-| `jev_ai/ai/chat.py` | Orquestación del flujo de chat |
+| `jev_ai/ai/chat.py` | Orquestación del chat stateless y persistente |
+| `jev_ai/ai/memory.py` | Contexto acotado de la conversación |
 | `jev_ai/infrastructure/database/` | Base declarativa, engine y sesiones |
 | `scripts/create_api_key.py` | Procedimiento de alta de organización y clave |
 | `scripts/seed.py` | Datos sintéticos reproducibles |
@@ -300,13 +302,32 @@ con `StateGraph` y compila el flujo:
 | `generate_response` | Renderiza la respuesta |
 
 La sesión viaja en `config["configurable"]["session"]`; el grafo se compila una vez en
-`ChatService` y no usa checkpointer.
+`ChatService` y no usa checkpointer. `ChatState` incluye el contexto acotado de la
+conversación cuando el turno es persistente.
 
 ### `ChatService.handle(...)`
 
 Construye el estado inicial, invoca el grafo y convierte el estado final en
-`ChatResult` (`status`, `intent`, `confidence`, `reply`, `query_plan`, `data`). No
-persiste estado.
+`ChatResult` (`status`, `intent`, `confidence`, `reply`, `query_plan`, `data`). Acepta
+`conversation_id` y `context` opcionales; no persiste nada.
+
+### `PersistentChatService.send_message(...)`
+
+Bloquea la conversación, carga el contexto con `load_context`, asigna `sequence`,
+ejecuta `ChatService.handle` y guarda usuario y asistente en una sola transacción.
+Devuelve `PersistentChatResult` con las entidades y el resultado del chat. Vive en
+`ai/chat.py` para que `modules/conversations` no dependa de la capa de IA.
+
+### `load_context(...)` y `trim_context(...)`
+
+`ai/memory.py` carga los últimos 10 mensajes, recorta a 4000 caracteres conservando lo
+más reciente y extrae el último `QueryPlan` válido. `LLMContext` viaja en `ChatState` y
+se pasa a `LLMProvider.generate(..., context=...)`.
+
+### `build_follow_up_plan(...)`
+
+En `ai/llm/plan_builder.py`, reutiliza el último plan para cambiar periodo o métrica en
+seguimientos como “¿Y en septiembre?” o “¿Y el CTR?”. No infiere comparaciones.
 
 ### `execute_query_plan(session, organization_id, plan)`
 
@@ -358,7 +379,8 @@ diagnóstico y la prueba viva del contrato de autenticación.
 
 Factory de la aplicación. Si no recibe `Settings`, usa `get_settings()`. Define el
 lifespan que crea y libera el engine, registra los routers y mapea
-`MarketingNotFoundError` a `404`. Uvicorn la invoca con `--factory`.
+`MarketingNotFoundError` y `ConversationNotFoundError` a `404`. Uvicorn la invoca con
+`--factory`.
 
 ### `ChatRequest`, `ChatResponse` y `chat()`
 
@@ -366,6 +388,13 @@ lifespan que crea y libera el engine, registra los routers y mapea
 autenticada y delega en un `ChatService` que ejecuta el grafo de LangGraph con
 `RuleBasedClassifier` y `MockLLMProvider.default()`. `ChatResponse` expone estado, intención, confianza,
 respuesta, plan y datos.
+
+### `ConversationCreate`, `SendMessageRequest` y endpoints de conversaciones
+
+`api/v1/endpoints/conversations.py` expone crear/listar/consultar conversaciones,
+listar mensajes y enviar un mensaje. El POST de mensajes delega en
+`PersistentChatService`, devuelve `ConversationChatResponse` con los ids de ambos
+mensajes y aplica el mismo aislamiento por organización que el resto de la API.
 
 ## Scripts y procedimientos
 

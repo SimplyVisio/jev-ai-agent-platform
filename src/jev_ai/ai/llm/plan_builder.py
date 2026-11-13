@@ -12,7 +12,8 @@ from typing import Any
 
 from jev_ai.ai.jev.classifier import classify_intent
 from jev_ai.ai.jev.intents import Intent
-from jev_ai.ai.jev.plans import MetricName
+from jev_ai.ai.jev.plans import MetricName, QueryOperation, plan_to_dict
+from jev_ai.ai.llm.base import LLMContext
 
 _MONTHS = {
     "enero": 1,
@@ -166,13 +167,18 @@ def _extract_comparison_periods(
     return (current_start, today), (previous_end.replace(day=1), previous_end)
 
 
-def _extract_metric(message: str) -> MetricName:
-    """Reconoce la métrica mencionada; ROAS es el valor por defecto."""
+def _metric_or_none(message: str) -> MetricName | None:
+    """Reconoce la métrica mencionada sin aplicar un valor por defecto."""
     normalized = _normalize(message)
     for term, metric in _METRIC_TERMS:
         if re.search(rf"\b{re.escape(term)}\b", normalized):
             return metric
-    return MetricName.ROAS
+    return None
+
+
+def _extract_metric(message: str) -> MetricName:
+    """Reconoce la métrica mencionada; ROAS es el valor por defecto."""
+    return _metric_or_none(message) or MetricName.ROAS
 
 
 def _extract_limit(message: str, *, default: int = 5) -> int:
@@ -261,3 +267,37 @@ def build_plan_from_message(message: str, *, today: date | None = None) -> dict[
         }
 
     return None
+
+
+def build_follow_up_plan(
+    message: str,
+    context: LLMContext,
+    *,
+    today: date | None = None,
+) -> dict[str, Any] | None:
+    """Reutiliza el último plan para resolver un seguimiento acotado.
+
+    Solo cubre cambios de periodo o de métrica sobre la operación anterior. Las
+    comparaciones necesitan dos periodos explícitos y no se infieren.
+    """
+    plan = context.last_plan
+    if plan is None or plan.operation == QueryOperation.COMPARE_PERIODS:
+        return None
+
+    current_day = today or date.today()
+    period = _parse_period(message, current_day)
+    metric = _metric_or_none(message)
+    is_top_ads = plan.operation == QueryOperation.TOP_ADS_BY_METRIC
+
+    if period is None and (metric is None or not is_top_ads):
+        return None
+
+    payload = plan_to_dict(plan)
+    if period is not None:
+        payload["date_from"], payload["date_to"] = (
+            period[0].isoformat(),
+            period[1].isoformat(),
+        )
+    if metric is not None and is_top_ads:
+        payload["metric"] = metric.value
+    return payload

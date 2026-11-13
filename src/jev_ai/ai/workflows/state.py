@@ -5,6 +5,7 @@ from uuid import UUID
 
 from jev_ai.ai.jev.intents import Intent
 from jev_ai.ai.jev.plans import QueryPlan
+from jev_ai.ai.llm.base import LLMContext
 from jev_ai.ai.status import ChatStatus
 
 
@@ -19,6 +20,7 @@ class ChatState(TypedDict):
     organization_id: UUID
     dry_run: bool
     conversation_id: UUID | None
+    context: NotRequired[LLMContext | None]
     user_id: UUID | None
     intent: NotRequired[Intent]
     confidence: NotRequired[float]

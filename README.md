@@ -19,8 +19,11 @@ Además, hay un **chat offline** que traduce lenguaje natural a un `QueryPlan`
 validado y lo ejecuta con SQLAlchemy. Funciona sin API key de ningún proveedor LLM y
 sin túnel: el LLM es un mock determinista y el flujo se orquesta con LangGraph. El
 clasificador se evalúa con un dataset versionado (accuracy, precision, recall y F1) y
-CI falla si baja de los umbrales. Redis y la memoria de conversación quedan para la
-siguiente fase.
+CI falla si baja de los umbrales.
+
+Las conversaciones se persisten en PostgreSQL (`conversations` y `messages`) con
+memoria acotada: los últimos 10 mensajes y 4000 caracteres, más el último plan para
+resolver seguimientos. Redis sigue fuera de esta fase.
 
 Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 
@@ -94,7 +97,11 @@ contenedor del backend. Los tests usan testcontainers y no dependen de esta red.
 | `GET /api/v1/analytics/campaigns` | `X-API-Key` | Rendimiento por campaña |
 | `GET /api/v1/analytics/ads` | `X-API-Key` | Rendimiento por anuncio |
 | `GET /api/v1/analytics/trends` | `X-API-Key` | Evolución por día, semana o mes |
-| `POST /api/v1/chat` | `X-API-Key` | Lenguaje natural → QueryPlan → datos |
+| `POST /api/v1/chat` | `X-API-Key` | Lenguaje natural → QueryPlan → datos (stateless) |
+| `GET/POST /api/v1/conversations` | `X-API-Key` | Listar / abrir conversaciones |
+| `GET /api/v1/conversations/{id}` | `X-API-Key` | Consultar una conversación |
+| `GET /api/v1/conversations/{id}/messages` | `X-API-Key` | Listar el transcript |
+| `POST /api/v1/conversations/{id}/messages` | `X-API-Key` | Enviar y persistir un turno |
 
 Las claves se guardan solo como hash SHA-256 y se muestran una única vez al crearlas.
 En esta fase se crean con `scripts/create_api_key.py`.
@@ -107,10 +114,11 @@ Los endpoints de analítica requieren `date_from` y `date_to` (inclusivos). Las
 fórmulas, la regla de sumar métricas base antes de calcular ratios y el tratamiento
 de `reach` están documentados en [`docs/metrics.md`](docs/metrics.md).
 
-El endpoint de chat es stateless: no guarda conversaciones ni usa Redis. Clasifica la
-intención, valida el `QueryPlan` con las políticas de JEV AI y ejecuta la consulta con
-los mismos servicios que la API de analítica. El contrato completo está en
-[`docs/api.md`](docs/api.md) y el flujo en [`docs/chat.md`](docs/chat.md).
+El endpoint `/chat` es stateless: clasifica la intención, valida el `QueryPlan` con las
+políticas de JEV AI y ejecuta la consulta con los mismos servicios que la API de
+analítica. Para conservar el hilo, crea una conversación y envía mensajes a
+`/conversations/{id}/messages`. El contrato completo está en [`docs/api.md`](docs/api.md)
+y el flujo en [`docs/chat.md`](docs/chat.md).
 
 El esquema OpenAPI en `/openapi.json` es el contrato fuente de la API. Si más adelante
 se construye un frontend TypeScript, sus tipos se generarán desde ese esquema; no se
@@ -129,6 +137,25 @@ La respuesta trae el estado, la intención, la confianza, el texto, el `query_pl
 validado y los datos. Los mensajes ambiguos devuelven `needs_clarification` con una
 petición de aclaración; `dry_run: true` valida el plan sin consultar la base de datos.
 
+### Conversaciones persistentes
+
+```bash
+curl -s http://127.0.0.1:8000/api/v1/conversations \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $JEV_API_KEY" \
+  -d '{"title": "Análisis de octubre"}'
+
+curl -s http://127.0.0.1:8000/api/v1/conversations/$CONVERSATION_ID/messages \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $JEV_API_KEY" \
+  -d '{"message": "Top 3 anuncios por ROAS en octubre de 2026"}'
+```
+
+Cada turno guarda la pregunta, la respuesta, la intención, la confianza, el estado y el
+plan. La memoria usa los últimos 10 mensajes (4000 caracteres); un seguimiento como
+“¿Y en septiembre?” reutiliza el plan anterior con el nuevo periodo. El `data` de
+analítica no se duplica en la tabla.
+
 Cliente de terminal, sin dependencias extra:
 
 ```bash
@@ -138,7 +165,8 @@ JEV_API_KEY="jev_..." python scripts/chat_cli.py --show-plan
 ```
 
 Colección HTTP para Bruno en [`bruno/jev-ai`](bruno/jev-ai): importa la carpeta,
-selecciona el entorno `Local` y sustituye `apiKey` por tu clave.
+selecciona el entorno `Local`, sustituye `apiKey` por tu clave y `conversationId` por
+el id que devuelva el POST de conversaciones.
 
 ## Compose
 

@@ -8,10 +8,17 @@ from langchain_core.runnables import RunnableConfig
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jev_ai.ai.jev.intents import Intent, IntentClassifier
-from jev_ai.ai.jev.plans import QueryPlan
-from jev_ai.ai.llm.base import LLMProvider
+from jev_ai.ai.jev.plans import QueryPlan, plan_to_dict
+from jev_ai.ai.llm.base import LLMContext, LLMProvider
+from jev_ai.ai.memory import load_context
 from jev_ai.ai.status import ChatStatus
 from jev_ai.ai.workflows import ChatState, build_chat_graph
+from jev_ai.modules.conversations import service as conversations
+from jev_ai.modules.conversations.models import (
+    Conversation,
+    Message,
+    MessageRole,
+)
 
 
 @dataclass(frozen=True)
@@ -39,6 +46,8 @@ class ChatService:
         message: str,
         *,
         dry_run: bool = False,
+        conversation_id: UUID | None = None,
+        context: LLMContext | None = None,
     ) -> ChatResult:
         """Procesa un mensaje y devuelve respuesta, plan y datos.
 
@@ -49,7 +58,8 @@ class ChatService:
             "message": message,
             "organization_id": organization_id,
             "dry_run": dry_run,
-            "conversation_id": None,
+            "conversation_id": conversation_id,
+            "context": context,
             "user_id": None,
         }
         config: RunnableConfig = {"configurable": {"session": session}}
@@ -62,4 +72,82 @@ class ChatService:
             reply=final_state.get("reply", ""),
             query_plan=final_state.get("plan"),
             data=final_state.get("data"),
+        )
+
+
+@dataclass(frozen=True)
+class PersistentChatResult:
+    """Resultado de un turno persistido."""
+
+    result: ChatResult
+    conversation: Conversation
+    user_message: Message
+    assistant_message: Message
+
+
+class PersistentChatService:
+    """Guarda cada turno y reutiliza el mismo grafo que el chat stateless."""
+
+    def __init__(self, chat: ChatService) -> None:
+        self._chat = chat
+
+    async def send_message(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        conversation_id: UUID,
+        message: str,
+    ) -> PersistentChatResult:
+        """Valida la conversación, procesa el mensaje y guarda ambos turnos.
+
+        La conversación se bloquea antes de leer el historial y calcular
+        ``sequence``. Usuario y asistente se confirman en una sola transacción.
+        """
+        conversation = await conversations.get_conversation_for_update(
+            session,
+            organization_id,
+            conversation_id,
+        )
+        context = await load_context(
+            session,
+            organization_id,
+            conversation_id,
+        )
+        sequence = await conversations.next_message_sequence(session, conversation_id)
+
+        user_message = await conversations.add_message(
+            session,
+            conversation,
+            sequence=sequence,
+            role=MessageRole.USER,
+            content=message,
+        )
+        conversations.set_auto_title(conversation, message)
+
+        result = await self._chat.handle(
+            session,
+            organization_id,
+            message,
+            conversation_id=conversation_id,
+            context=context,
+        )
+        assistant_message = await conversations.add_message(
+            session,
+            conversation,
+            sequence=sequence + 1,
+            role=MessageRole.ASSISTANT,
+            content=result.reply,
+            intent=result.intent.value,
+            confidence=result.confidence,
+            status=result.status.value,
+            query_plan=(None if result.query_plan is None else plan_to_dict(result.query_plan)),
+        )
+        conversations.touch(conversation)
+        await session.commit()
+
+        return PersistentChatResult(
+            result=result,
+            conversation=conversation,
+            user_message=user_message,
+            assistant_message=assistant_message,
         )

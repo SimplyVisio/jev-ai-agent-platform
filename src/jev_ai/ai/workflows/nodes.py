@@ -50,7 +50,7 @@ class ChatNodes:
         if intent is Intent.HELP:
             return "help"
         if intent is Intent.UNKNOWN or confidence < MIN_CONFIDENCE:
-            return "clarify"
+            return "plan" if state.get("context") is not None else "clarify"
         return "plan"
 
     async def help(self, _state: ChatState) -> dict:
@@ -74,11 +74,16 @@ class ChatNodes:
     async def propose_plan(self, state: ChatState) -> dict:
         """Pide al LLM un plan y lo convierte en un ``QueryPlan`` tipado."""
         try:
-            raw_plan = await self._llm.generate(state["message"])
+            raw_plan = await self._llm.generate(
+                state["message"],
+                context=state.get("context"),
+            )
         except LLMNoResponseError:
             return {
                 "status": ChatStatus.NEEDS_CLARIFICATION,
-                "reply": _MISSING_CAMPAIGN,
+                "reply": (
+                    _CLARIFICATION if state.get("context") is not None else _MISSING_CAMPAIGN
+                ),
                 "plan": None,
             }
         except LLMError as exc:
@@ -89,13 +94,21 @@ class ChatNodes:
             }
 
         try:
-            return {"plan": parse_query_plan(raw_plan)}
+            plan = parse_query_plan(raw_plan)
         except PlanParseError:
             return {
                 "status": ChatStatus.NEEDS_CLARIFICATION,
                 "reply": _CLARIFICATION,
                 "plan": None,
             }
+
+        if state.get("intent") is Intent.UNKNOWN and state.get("context") is not None:
+            return {
+                "plan": plan,
+                "intent": Intent(plan.operation.value),
+                "confidence": max(state.get("confidence", 0.0), MIN_CONFIDENCE),
+            }
+        return {"plan": plan}
 
     def route_after_propose(self, state: ChatState) -> Literal["validate", "clarify", "error"]:
         """Separa errores de proveedor, aclaraciones y planes listos para validar."""
