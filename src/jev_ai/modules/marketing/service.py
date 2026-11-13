@@ -63,6 +63,18 @@ async def get_campaign(
     return campaign
 
 
+async def find_campaign_by_name(
+    session: AsyncSession,
+    organization_id: UUID,
+    name: str,
+) -> Campaign:
+    """Devuelve una campaña por nombre o lanza ``MarketingNotFoundError``."""
+    campaign = await repository.find_campaign_by_name(session, organization_id, name)
+    if campaign is None:
+        raise MarketingNotFoundError("Campaign")
+    return campaign
+
+
 async def create_campaign(
     session: AsyncSession,
     organization_id: UUID,

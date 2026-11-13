@@ -32,6 +32,9 @@ jobs:
       - name: Check formatting
         run: uv run ruff format --check .
 
+      - name: Check import contracts
+        run: uv run lint-imports
+
       - name: Run tests
         run: uv run pytest
 

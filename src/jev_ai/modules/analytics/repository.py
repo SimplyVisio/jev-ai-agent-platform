@@ -163,6 +163,40 @@ async def list_campaigns(
     ]
 
 
+async def get_campaign_performance(
+    session: AsyncSession,
+    organization_id: UUID,
+    campaign_id: UUID,
+    date_from: date,
+    date_to: date,
+) -> CampaignAggregate | None:
+    """Agrega métricas de una sola campaña de la organización."""
+    query = (
+        select(
+            Campaign.id.label("campaign_id"),
+            Campaign.name.label("campaign_name"),
+            *_sum_columns(),
+        )
+        .join(Ad, Ad.campaign_id == Campaign.id)
+        .join(AdInsight, AdInsight.ad_id == Ad.id)
+        .where(
+            Campaign.id == campaign_id,
+            Campaign.organization_id == organization_id,
+            Ad.organization_id == organization_id,
+        )
+        .group_by(Campaign.id, Campaign.name)
+    )
+    query = _date_filter(query, organization_id, date_from, date_to)
+    row = (await session.execute(query)).one_or_none()
+    if row is None:
+        return None
+    return CampaignAggregate(
+        campaign_id=row.campaign_id,
+        campaign_name=row.campaign_name,
+        base=_base_from_row(row),
+    )
+
+
 async def list_ads(
     session: AsyncSession,
     organization_id: UUID,

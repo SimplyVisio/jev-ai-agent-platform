@@ -1,0 +1,139 @@
+# API REST
+
+Base local: `http://127.0.0.1:8000`. Todas las rutas privadas exigen la cabecera
+`X-API-Key`; el `organization_id` sale de esa clave y nunca del cuerpo de la petición.
+La fuente de verdad del contrato es `/openapi.json` y la documentación interactiva está
+en `/docs`.
+
+## Autenticación
+
+```http
+X-API-Key: jev_...
+```
+
+Las claves se crean con `scripts/create_api_key.py`. Se guarda solo su hash SHA-256.
+Una cabecera ausente o una clave inválida devuelven `401` con el mismo mensaje.
+
+## Errores
+
+| Código | Cuándo |
+|---|---|
+| `401` | Falta la API key o no es válida |
+| `404` | El recurso no existe o pertenece a otra organización |
+| `422` | El cuerpo o los parámetros no cumplen el esquema |
+
+Formato: `{"detail": "..."}`.
+
+## Endpoints
+
+| Método y ruta | Función |
+|---|---|
+| `GET /health` | Liveness público |
+| `GET /api/v1/auth/me` | Organización autenticada |
+| `GET/POST /api/v1/campaigns` | Listar / crear campañas |
+| `GET/PATCH/DELETE /api/v1/campaigns/{id}` | Consultar / actualizar / archivar |
+| `GET/POST /api/v1/campaigns/{id}/ads` | Listar / crear anuncios |
+| `GET/PATCH/DELETE /api/v1/campaigns/{id}/ads/{ad_id}` | Consultar / actualizar / archivar |
+| `GET /api/v1/analytics/overview` | Resumen de la organización |
+| `GET /api/v1/analytics/campaigns` | Rendimiento por campaña |
+| `GET /api/v1/analytics/ads` | Rendimiento por anuncio |
+| `GET /api/v1/analytics/trends` | Serie temporal |
+| `POST /api/v1/chat` | Chat offline: lenguaje natural → QueryPlan → datos |
+
+Los listados aceptan `limit` (1–100, por defecto 50), `offset` y filtros de estado u
+objetivo. `DELETE` archiva (`status=archived`), no borra datos.
+
+Los endpoints de analítica exigen `date_from` y `date_to` inclusivos. `trends` acepta
+`granularity=day|week|month`; las semanas empiezan en lunes. Fórmulas y semántica de
+`reach` en [`metrics.md`](metrics.md).
+
+## Formato de números
+
+- Dinero: `Decimal` serializado como cadena con dos decimales (`"180.00"`).
+- Ratios: `float` redondeado a seis decimales (`7.222222`) o `null` si el denominador
+  es cero.
+
+## Chat
+
+`POST /api/v1/chat` es stateless: no guarda conversación ni usa Redis. El flujo es
+clasificar la intención, proponer un `QueryPlan`, validarlo con JEV AI y ejecutarlo con
+los servicios de analítica y marketing.
+
+### Petición
+
+```json
+{
+  "message": "¿Cuáles son los 3 mejores anuncios por ROAS en octubre de 2026?",
+  "dry_run": false
+}
+```
+
+`message` tiene entre 1 y 1000 caracteres. `dry_run=true` valida el plan sin ejecutar
+la consulta.
+
+### Respuesta
+
+```json
+{
+  "status": "ok",
+  "intent": "top_ads_by_metric",
+  "confidence": 0.95,
+  "reply": "Top 3 anuncios por ROAS (2026-10-01 a 2026-10-31): ...",
+  "query_plan": {
+    "operation": "top_ads_by_metric",
+    "metric": "roas",
+    "date_from": "2026-10-01",
+    "date_to": "2026-10-31",
+    "limit": 3
+  },
+  "data": [
+    {
+      "ad_id": "00000000-0000-0000-0000-000000000000",
+      "ad_name": "Prospecting Winner",
+      "campaign_name": "Demo Prospecting",
+      "metrics": {
+        "impressions": 26400,
+        "reach": null,
+        "clicks": 1716,
+        "landing_page_views": 1338,
+        "spend": "1451.20",
+        "leads": 240,
+        "sales": 48,
+        "revenue": "4560.00",
+        "frequency": null,
+        "ctr": 6.5,
+        "cpc": 0.845,
+        "cpm": 54.97,
+        "cpl": 6.05,
+        "conversion_rate": 17.94,
+        "roas": 3.142
+      }
+    }
+  ]
+}
+```
+
+`status` puede ser:
+
+| Valor | Significado |
+|---|---|
+| `ok` | Respondió con datos o validó un `dry_run` |
+| `needs_clarification` | Intención ambigua, plan inválido o campaña inexistente |
+| `error` | El proveedor LLM falló |
+
+`query_plan` se incluye cuando existe un plan, incluso si fue rechazado. `data` es
+`null` cuando no se ejecutó ninguna consulta.
+
+Detalles del flujo, catálogo y políticas en [`chat.md`](chat.md).
+
+## Ejemplo con curl
+
+```bash
+curl -s http://127.0.0.1:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $JEV_API_KEY" \
+  -d '{"message": "Compara este mes con el mes pasado"}'
+```
+
+Para probar gráficamente, abre la colección [`bruno/jev-ai`](../bruno/jev-ai) en Bruno y
+selecciona el entorno `Local`.

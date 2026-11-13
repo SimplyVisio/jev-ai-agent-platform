@@ -14,8 +14,13 @@ responsabilidad tiene cada una. Se actualiza al cerrar cada fase.
 | `jev_ai/api/deps.py` | Sesión de BD y autenticación por API key |
 | `jev_ai/api/v1/endpoints/` | Endpoints HTTP |
 | `jev_ai/modules/organizations/` | Entidades y consultas de organizaciones |
+| `jev_ai/ai/jev/` | Intenciones, QueryPlan, clasificador y políticas |
+| `jev_ai/ai/llm/` | `LLMProvider`, mock y traductor offline |
+| `jev_ai/ai/chat.py` | Orquestación del flujo de chat |
 | `jev_ai/infrastructure/database/` | Base declarativa, engine y sesiones |
 | `scripts/create_api_key.py` | Procedimiento de alta de organización y clave |
+| `scripts/seed.py` | Datos sintéticos reproducibles |
+| `scripts/chat_cli.py` | Cliente de chat por terminal |
 
 ## Configuración
 
@@ -130,6 +135,7 @@ son los mismos `StrEnum` del modelo. `CampaignUpdate` y `AdUpdate` son parciales
 |---|---|
 | `list_campaigns` | Filtra por organización, estado y objetivo; ordena y pagina |
 | `get_campaign` | Busca una campaña por id y organización |
+| `find_campaign_by_name` | Busca por nombre exacto sin distinguir mayúsculas |
 | `list_ads` | Filtra anuncios por organización, campaña y estado |
 | `get_ad` | Busca un anuncio por id, campaña y organización |
 
@@ -140,6 +146,7 @@ Todas las consultas incluyen `organization_id`; no existe una búsqueda global p
 | Función | Regla |
 |---|---|
 | `list_campaigns` / `get_campaign` | Lectura acotada a la organización |
+| `find_campaign_by_name` | Busca por nombre exacto; `None` si no existe |
 | `create_campaign` / `update_campaign` | Valida vía schemas y hace commit |
 | `archive_campaign` | Cambia `status` a `archived`; idempotente |
 | `list_ads` / `get_ad` | Exige que la campaña pertenezca a la organización |
@@ -190,6 +197,7 @@ Devuelve dataclasses (`BaseAggregate`, `CampaignAggregate`, `AdAggregate`,
 | Función | Responsabilidad |
 |---|---|
 | `get_overview` | Suma todas las filas de la organización en el rango |
+| `get_campaign_performance` | Agrega una sola campaña o devuelve `None` |
 | `list_campaigns` | Agrupa por campaña; ordena por gasto |
 | `list_ads` | Agrupa por anuncio; filtro opcional de campaña |
 | `list_trends` | Agrupa por día, semana o mes |
@@ -202,6 +210,7 @@ Todas las consultas filtran por `AdInsight.organization_id` y por el rango inclu
 |---|---|
 | `calculate_metrics` | Deriva ratios desde sumas base; evita promediar ratios |
 | `get_overview` | Construye `OverviewRead`; `reach` siempre `null` |
+| `get_campaign_performance` | Métricas de una campaña o `None` sin datos |
 | `list_campaign_performance` | Convierte agregados por campaña en schemas |
 | `list_ad_performance` | Informa `reach`/`frequency` solo si el rango es de un día |
 | `list_trends` | Calcula el fin de cada periodo y lo recorta al rango |
@@ -214,6 +223,63 @@ Todas las consultas filtran por `AdInsight.organization_id` y por el rango inclu
 | `GET /api/v1/analytics/campaigns` | Rendimiento por campaña |
 | `GET /api/v1/analytics/ads` | Rendimiento por anuncio |
 | `GET /api/v1/analytics/trends` | Serie temporal por periodo |
+
+## Capa de IA offline
+
+### `Intent`, `IntentResult` e `IntentClassifier`
+
+`Intent` es el catálogo cerrado de intenciones: `top_ads_by_metric`,
+`campaign_performance`, `compare_periods`, `help` y `unknown`. `IntentClassifier` es la
+interfaz async; `RuleBasedClassifier` implementa reglas priorizadas (comparación, top
+de anuncios, campaña, ayuda). Cada resultado incluye intención, confianza y motivo.
+
+### `QueryPlan`
+
+Vive en `ai/jev/plans.py`. Es una unión discriminada por `operation`:
+
+| Clase | Campos propios |
+|---|---|
+| `TopAdsByMetricPlan` | `metric`, `limit` |
+| `CampaignPerformancePlan` | `campaign_id` o `campaign_name` |
+| `ComparePeriodsPlan` | `comparison_date_from`, `comparison_date_to` |
+
+Todas validan fechas y prohíben campos extra. `parse_query_plan` convierte el texto del
+LLM en un plan tipado y lanza `PlanParseError` si no cumple el contrato.
+
+### `validate_query_plan(plan, expected_intent)`
+
+Aplica políticas deterministas: coincidencia intención/operación, rango máximo de 366
+días, rechazo de `reach`/`frequency` para ordenar anuncios y nombre de campaña no
+vacío. Devuelve `PlanDecision` con la lista de violaciones.
+
+### `LLMProvider` y `MockLLMProvider`
+
+`LLMProvider` declara `async generate(prompt) -> str`. `MockLLMProvider` devuelve
+respuestas fijas por patrón o un plan JSON generado por `build_plan_from_message`.
+Puede simular latencia y errores de conexión o timeout. No hay proveedor real todavía.
+
+### `build_plan_from_message(message, today=None)`
+
+Traductor determinista: reconoce métricas, meses en español, fechas ISO, “este mes”,
+“mes pasado”, “últimos N días”, límites y nombres de campaña. Devuelve un diccionario o
+`None` si no puede proponer un plan.
+
+### `ChatService.handle(...)`
+
+Orquesta clasificación, generación del plan, parseo, validación, ejecución y respuesta.
+`ChatResult` contiene `status`, `intent`, `confidence`, `reply`, `query_plan` y `data`.
+No persiste estado.
+
+### `execute_query_plan(session, organization_id, plan)`
+
+Ejecuta el plan con los servicios de analytics y marketing, siempre acotado por la
+organización autenticada. `top_ads_by_metric` ordena agregados ya calculados y usa
+`LOWER_IS_BETTER` para CPC, CPM y CPL.
+
+### `render_reply(plan, data)`
+
+Genera el texto final con plantillas y los datos validados; no deja que el LLM invente
+cifras. `HELP_TEXT` documenta ejemplos de uso.
 
 ## Capa HTTP
 
@@ -256,6 +322,13 @@ Factory de la aplicación. Si no recibe `Settings`, usa `get_settings()`. Define
 lifespan que crea y libera el engine, registra los routers y mapea
 `MarketingNotFoundError` a `404`. Uvicorn la invoca con `--factory`.
 
+### `ChatRequest`, `ChatResponse` y `chat()`
+
+`POST /api/v1/chat` valida el mensaje (1–1000 caracteres), inyecta la organización
+autenticada y delega en un `ChatService` con `RuleBasedClassifier` y
+`MockLLMProvider.default()`. `ChatResponse` expone estado, intención, confianza,
+respuesta, plan y datos.
+
 ## Scripts y procedimientos
 
 ### `get_or_create_organization(session, name, currency_code)`
@@ -273,27 +346,30 @@ claves menores de 16 caracteres y duplicados.
 Define `--organization`, `--currency` y `--key`. Pasar la clave por argumento deja
 rastro en el historial del shell; se recomienda omitir `--key`.
 
+### `seed(organization_name, reset=False)`
+
+Genera tres campañas y siete anuncios con métricas diarias reproducibles (semilla 42)
+del 1 de septiembre al 13 de noviembre de 2026. Sin `--reset` no duplica datos; con
+`--reset` borra solo las campañas de demo de esa organización. No crea API keys.
+
+### `scripts/chat_cli.py`
+
+Cliente HTTP de terminal basado en `urllib`. Acepta `--api-key` o `JEV_API_KEY`,
+`--message`, `--dry-run` y `--show-plan`. Sin `--message` abre un bucle interactivo.
+
 ## Clases abstractas e interfaces
 
-En esta fase **no hay clases abstractas ni Protocol en Python**. No existe una segunda
-implementación que justifique la abstracción (regla de oro: funcionalidad primero).
+Ahora existen dos interfaces porque el flujo necesita sustituir implementaciones sin
+tocar el resto del sistema:
 
-Los contratos actuales son:
-
-- **Pydantic** (`Settings`, `HealthResponse`, `OrganizationResponse`): validación y
-  esquema OpenAPI.
-- **OpenAPI** (`/openapi.json`): contrato HTTP publicado. Si se construye un frontend
-  TypeScript, sus tipos se generarán desde aquí. No se mantiene un espejo manual.
-
-Interfaces previstas, que se crearán cuando exista más de una implementación:
-
-| Interfaz | Fase | Implementaciones previstas |
+| Interfaz | Implementaciones actuales | Implementaciones previstas |
 |---|---|---|
-| `IntentClassifier` | 8 | reglas, TF-IDF/embeddings |
-| `LLMProvider` | 7 | mock determinista, proveedor real |
+| `IntentClassifier` | `RuleBasedClassifier` | TF-IDF, embeddings, híbrido |
+| `LLMProvider` | `MockLLMProvider` | proveedor real |
 
-No se crean antes de tener dos implementaciones: un `ABC` con una sola clase concreta
-solo añade ceremonia.
+Además, Pydantic (`Settings`, `QueryPlan`, `ChatRequest`, `ChatResponse`) valida los
+contratos y OpenAPI (`/openapi.json`) publica el esquema HTTP. No se mantiene un espejo
+TypeScript manual.
 
 ## Contratos de API
 

@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from jev_ai.modules.marketing.models import (
@@ -59,6 +59,23 @@ async def get_campaign(
             Campaign.id == campaign_id,
             Campaign.organization_id == organization_id,
         )
+    )
+
+
+async def find_campaign_by_name(
+    session: AsyncSession,
+    organization_id: UUID,
+    name: str,
+) -> Campaign | None:
+    """Busca una campaña por nombre exacto sin distinguir mayúsculas."""
+    return await session.scalar(
+        select(Campaign)
+        .where(
+            Campaign.organization_id == organization_id,
+            func.lower(Campaign.name) == name.lower(),
+        )
+        .order_by(Campaign.created_at.desc())
+        .limit(1)
     )
 
 

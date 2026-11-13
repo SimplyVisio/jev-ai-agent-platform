@@ -1,0 +1,15 @@
+meta {
+  name: Analytics - Ads
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/v1/analytics/ads?date_from=2026-10-01&date_to=2026-10-01&limit=10
+  body: none
+  auth: none
+}
+
+headers {
+  X-API-Key: {{apiKey}}
+}

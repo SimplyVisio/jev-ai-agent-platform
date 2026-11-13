@@ -71,7 +71,8 @@ host ──127.0.0.1:8000──> backend ──data──> postgres
 4. El LLM no genera SQL libre; propone un `QueryPlan` de un catálogo cerrado.
 5. El `organization_id` sale del contexto autenticado, nunca del LLM.
 
-La regla 1 se hará cumplir con `import-linter` cuando exista la capa de IA.
+La regla 1 ya se hace cumplir con `import-linter`: los contratos viven en
+`pyproject.toml` y `uv run lint-imports` los verifica en local y en CI.
 
 ## Autenticación
 
@@ -140,6 +141,31 @@ Las cinco tablas existen. `campaigns`, `ads` y `ad_insights` viven en
   ni se promedian entre días.
 - El borrado es en cascada: organización → campañas → anuncios → métricas.
 - No hay `external_id` de Meta Ads todavía; se agrega con la integración real.
+
+## Chat offline (sin Redis)
+
+El chat actual es stateless y no usa Redis ni LangGraph. La secuencia es explícita en
+`ai/chat.py`:
+
+```text
+mensaje
+  → RuleBasedClassifier (ai/jev/classifier.py)
+  → MockLLMProvider (ai/llm/mock.py) propone un QueryPlan
+  → parse_query_plan (ai/jev/plans.py, catálogo cerrado)
+  → validate_query_plan (ai/jev/policies.py)
+  → execute_query_plan (services de analytics y marketing)
+  → render_reply (plantillas con datos validados)
+```
+
+- `POST /api/v1/chat` es el único endpoint nuevo: `api/v1/endpoints/chat.py`.
+- El LLM nunca genera SQL ni decide la organización: el `organization_id` sale del
+  contexto autenticado.
+- JEV AI valida el plan con reglas deterministas (catálogo, rango máximo de 366 días,
+  métricas no ordenables, nombre de campaña).
+- La respuesta se construye con plantillas a partir de los datos ya calculados, de
+  modo que el texto no puede inventar cifras.
+- Redis, tablas de conversaciones y LangGraph quedan para una fase posterior; ver
+  [`chat.md`](chat.md) y el ADR `docs/decisions/0001-offline-llm-mocks.md`.
 
 ## Principios de diseño
 

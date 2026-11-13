@@ -23,6 +23,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "httpx2>=2.16.0",
+    "import-linter>=2.16",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.5.0",
     "ruff>=0.17.4",
@@ -36,6 +37,23 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.importlinter]
+root_package = "jev_ai"
+
+[[tool.importlinter.contracts]]
+name = "Modules no dependen de la capa de IA"
+type = "forbidden"
+source_modules = ["jev_ai.modules"]
+forbidden_modules = ["jev_ai.ai"]
+
+[[tool.importlinter.contracts]]
+name = "La capa de IA puede usar los módulos de negocio"
+type = "layers"
+layers = [
+  "jev_ai.ai",
+  "jev_ai.modules",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -121,6 +121,30 @@ async def list_campaign_performance(
     ]
 
 
+async def get_campaign_performance(
+    session: AsyncSession,
+    organization_id: UUID,
+    campaign_id: UUID,
+    date_from: date,
+    date_to: date,
+) -> CampaignPerformance | None:
+    """Devuelve métricas de una campaña concreta o ``None`` si no tiene datos."""
+    row = await repository.get_campaign_performance(
+        session,
+        organization_id,
+        campaign_id,
+        date_from,
+        date_to,
+    )
+    if row is None:
+        return None
+    return CampaignPerformance(
+        campaign_id=row.campaign_id,
+        campaign_name=row.campaign_name,
+        metrics=calculate_metrics(row.base, reach=None),
+    )
+
+
 async def list_ad_performance(
     session: AsyncSession,
     organization_id: UUID,

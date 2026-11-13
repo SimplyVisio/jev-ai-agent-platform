@@ -1,0 +1,21 @@
+meta {
+  name: Chat - Campaign performance
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/v1/chat
+  body: json
+  auth: none
+}
+
+headers {
+  X-API-Key: {{apiKey}}
+}
+
+body:json {
+  {
+    "message": "¿Cómo va la campaña \"Demo Prospecting\" en octubre de 2026?"
+  }
+}
