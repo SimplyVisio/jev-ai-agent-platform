@@ -1,3 +1,5 @@
+"""Router de la versión 1 de la API."""
+
 from fastapi import APIRouter
 
 from jev_ai.api.v1.endpoints import auth

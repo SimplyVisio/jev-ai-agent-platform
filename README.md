@@ -24,7 +24,7 @@ Consulta el roadmap y las decisiones del proyecto en [`AGENTS.md`](AGENTS.md).
 | uv | Paquetes y entornos |
 | Ruff | Lint y formato |
 | pytest + pytest-asyncio | Tests |
-| Docker + Docker Compose | PostgreSQL y Redis locales |
+| Docker + Docker Compose | Backend, PostgreSQL y Redis |
 | FastAPI + Pydantic | API REST |
 | SQLAlchemy async + Alembic + asyncpg | Persistencia y migraciones |
 | testcontainers | Tests de integración con PostgreSQL real |
@@ -39,16 +39,29 @@ Consulta el roadmap y las decisiones del proyecto en [`AGENTS.md`](AGENTS.md).
 ## Puesta en marcha
 
 ```bash
-cp .env.example .env    # ajusta POSTGRES_PASSWORD y DATABASE_URL
+cp .env.example .env    # ajusta POSTGRES_PASSWORD
 uv sync
-docker compose up -d --wait
-uv run alembic upgrade head
-uv run python scripts/create_api_key.py --organization "Demo"
-uv run uvicorn jev_ai.main:create_app --factory --reload
+docker compose up -d --build --wait
+docker compose run --rm backend alembic upgrade head
+docker compose run --rm backend python scripts/create_api_key.py --organization "Demo"
 ```
 
 La API queda en `http://127.0.0.1:8000` y la documentación interactiva en `/docs`.
 Cada llamada privada requiere la cabecera `X-API-Key` con la clave generada.
+
+## Aislamiento de infraestructura
+
+El backend corre dentro de Compose. PostgreSQL y Redis **no publican puertos en el
+host**: solo son accesibles desde la red interna `data`. La red `edge` publica
+únicamente la API en `127.0.0.1` para que puedas usar Bruno o el navegador.
+
+```text
+host ──127.0.0.1:8000──> backend ──data──> postgres
+                                   └────> redis
+```
+
+Por eso los comandos de migración y creación de claves se ejecutan dentro del
+contenedor del backend. Los tests usan testcontainers y no dependen de esta red.
 
 ## API
 
@@ -61,25 +74,29 @@ Las claves se guardan solo como hash SHA-256 y se muestran una única vez al cre
 En esta fase se crean con `scripts/create_api_key.py`; el CRUD administrativo llega
 más adelante.
 
-## Servicios locales
+El esquema OpenAPI en `/openapi.json` es el contrato fuente de la API. Si más adelante
+se construye un frontend TypeScript, sus tipos se generarán desde ese esquema; no se
+mantiene un espejo manual.
 
-| Servicio | Dirección | Credenciales |
-|---|---|---|
-| PostgreSQL | `localhost:5433` | `.env` (`POSTGRES_*`) |
-| Redis | `localhost:6379` | sin autenticación (solo local) |
+## Compose
 
-Los puertos se publican únicamente en `127.0.0.1`. El 5433 evita el choque con un
-PostgreSQL instalado en el host. Los contenedores tienen límites de recursos:
-PostgreSQL 1 CPU / 512 MB y Redis 0.5 CPU / 256 MB.
+| Servicio | Acceso |
+|---|---|
+| API | `localhost:8000` (solo `127.0.0.1`) |
+| PostgreSQL | Red interna `data`, sin puerto en el host |
+| Redis | Red interna `data`, sin puerto en el host |
 
 ```bash
 docker compose ps                              # estado y healthchecks
-docker compose logs -f postgres                # logs
+docker compose logs -f backend                 # logs
 docker compose exec postgres psql -U jev_ai -d jev_ai
 docker compose exec redis redis-cli ping
 docker compose down                            # detener
 docker compose down -v                         # detener y borrar datos
 ```
+
+Los contenedores tienen límites de recursos: PostgreSQL 1 CPU / 512 MB, Redis
+0.5 CPU / 256 MB y backend 1 CPU / 512 MB.
 
 ## Comandos
 
@@ -88,9 +105,10 @@ uv run pytest                              # tests (requiere Docker por testcont
 uv run ruff check .                        # lint
 uv run ruff format --check .               # comprobar formato
 uv run ruff format .                       # aplicar formato
-uv run alembic upgrade head                # aplicar migraciones
-uv run alembic revision -m "descripción"   # crear migración
-uv run uvicorn jev_ai.main:create_app --factory --reload
+
+docker compose run --rm backend alembic upgrade head
+docker compose run --rm backend python scripts/create_api_key.py --organization "Demo"
+docker compose up -d --build --wait        # reconstruir tras cambiar código o migraciones
 ```
 
 ## Estructura
@@ -105,8 +123,9 @@ scripts/             utilidades de desarrollo
 tests/unit/          tests unitarios
 tests/integration/   tests con infraestructura real
 tests/e2e/           tests de extremo a extremo
-docs/                documentación de arquitectura y métricas
-compose.yaml         PostgreSQL y Redis locales
+docs/                arquitectura, métricas y referencia de código
+compose.yaml         backend, PostgreSQL y Redis
+Dockerfile           imagen del backend
 .github/workflows/   integración continua
 ```
 
@@ -114,6 +133,7 @@ compose.yaml         PostgreSQL y Redis locales
 
 - [`AGENTS.md`](AGENTS.md): decisiones, reglas y roadmap.
 - [`docs/architecture.md`](docs/architecture.md): arquitectura del backend.
+- [`docs/code-reference.md`](docs/code-reference.md): funciones, clases y contratos.
 
 ## Git
 

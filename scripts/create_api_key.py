@@ -1,3 +1,11 @@
+"""Crea una organización y una API key desde la línea de comandos.
+
+Uso:
+    python scripts/create_api_key.py --organization "Demo"
+
+La clave se imprime una sola vez; solo se guarda su hash SHA-256.
+"""
+
 import argparse
 import asyncio
 import secrets
@@ -19,6 +27,16 @@ async def get_or_create_organization(
     name: str,
     currency_code: str,
 ) -> Organization:
+    """Busca una organización por nombre o la crea si no existe.
+
+    Args:
+        session: Sesión async activa.
+        name: Nombre de la organización.
+        currency_code: Código ISO 4217 usado si hay que crearla.
+
+    Returns:
+        Organización existente o recién creada.
+    """
     organization = await session.scalar(select(Organization).where(Organization.name == name))
     if organization is None:
         organization = Organization(name=name, currency_code=currency_code)
@@ -32,6 +50,16 @@ async def create_api_key(
     currency_code: str,
     raw_key: str | None,
 ) -> None:
+    """Crea una API key, guarda su hash e imprime la clave una única vez.
+
+    Args:
+        organization_name: Organización a la que pertenecerá la clave.
+        currency_code: Moneda de la organización si hay que crearla.
+        raw_key: Clave en texto plano. Si es ``None`` se genera aleatoriamente.
+
+    Raises:
+        SystemExit: Si la clave es demasiado corta o ya existe.
+    """
     if raw_key is not None and len(raw_key) < 16:
         raise SystemExit("La API key debe tener al menos 16 caracteres.")
 
@@ -63,6 +91,7 @@ async def create_api_key(
 
 
 def parse_args() -> argparse.Namespace:
+    """Define y parsea los argumentos del script."""
     parser = argparse.ArgumentParser(description="Crea una organización y su API key.")
     parser.add_argument("--organization", default="Demo", help="Nombre de la organización.")
     parser.add_argument("--currency", default="USD", help="Código ISO de la moneda.")

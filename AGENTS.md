@@ -45,16 +45,18 @@ Fases 1, 2 y 3 completadas (2026-11-12): estructura base, tooling, CI, documenta
 
 ```
 jev-ai/
-├── .env.example               # PostgreSQL, Redis y DATABASE_URL
-├── .github/workflows/ci.yml   # ruff + pytest
+├── .dockerignore
+├── .env.example               # PostgreSQL, Redis y BACKEND_PORT
+├── .github/workflows/ci.yml   # ruff + pytest + Docker
 ├── .gitignore
 ├── .python-version            # 3.12
 ├── AGENTS.md
+├── Dockerfile                 # imagen del backend (usuario no-root)
 ├── README.md
 ├── alembic.ini
 ├── alembic/                   # migraciones
-├── compose.yaml               # PostgreSQL 17 + Redis 7
-├── docs/architecture.md
+├── compose.yaml               # backend + PostgreSQL 17 + Redis 7
+├── docs/{architecture,code-reference}.md
 ├── pyproject.toml
 ├── scripts/create_api_key.py  # crea organización + API key
 ├── uv.lock
@@ -76,8 +78,11 @@ jev-ai/
 - Esquema inicial migrado: `organizations` y `api_keys`. El modelo de marketing llega en la fase 4.
 - Tests de integración con PostgreSQL real vía testcontainers; requieren Docker.
 - CI configurado en `.github/workflows/ci.yml`; todavía no hay remoto en GitHub.
-- Infra local: PostgreSQL 17 y Redis 7 en `compose.yaml`, con healthchecks y volúmenes. Los puertos se publican solo en `127.0.0.1`; PostgreSQL usa 5433 para evitar choque con el host.
-- `.env` no se versiona; `.env.example` sí. Todavía no hay Dockerfile ni backend en Compose.
+- Infra local: el **backend corre en Compose**. Solo la API se publica en `127.0.0.1:8000`; PostgreSQL y Redis viven en la red interna `data` sin puertos en el host.
+- `DATABASE_URL` la construye Compose dentro de la red; no está en `.env` ni se usa desde el host.
+- Migraciones y scripts se ejecutan con `docker compose run --rm backend ...`.
+- No se mantienen contratos duplicados: Pydantic y OpenAPI (`/openapi.json`) son la fuente de verdad; los tipos TypeScript se generarán desde OpenAPI si se construye frontend.
+- `.env` no se versiona; `.env.example` sí.
 - Flujo Git: `main` (commit inicial) ← `develop` ← `feature/*`.
 
 ### Decisión resuelta: subpaquete del motor
@@ -360,14 +365,15 @@ Agrupar mensajes consecutivos de un usuario (ej. 5 mensajes en pocos segundos) e
 | import-linter | Hacer cumplir reglas de dependencias |
 | sqlglot | Solo para experimentos futuros de SQL generado |
 | Bruno | Cliente HTTP |
+| TypeScript | Futuro frontend; sin contratos manuales por ahora |
 | Docker / Docker Compose | Contenedores |
-| GitHub Actions | CI (ruff + pytest desde la fase 1) |
+| GitHub Actions | CI (ruff + pytest + Docker desde la fase 3) |
 
 ---
 
 ## 13. Entorno de desarrollo
 
-Híbrido: **Python local con `uv`** (depuración sencilla en VS Code) + **Docker Compose para PostgreSQL y Redis**. Más adelante se agregan backend y worker a Compose. Contenedores finales: `backend`, `postgres`, `redis`, `celery_worker` en una misma red privada. Variables de entorno en `.env` (nunca commiteado) con `.env.example` versionado.
+Backend, PostgreSQL y Redis corren en **Docker Compose**. Python y `uv` se usan en el host para lint, formato y tests; los tests de integración levantan PostgreSQL con testcontainers. PostgreSQL y Redis no publican puertos: el backend los alcanza por la red interna `data`. Solo la API se publica en `127.0.0.1`. Contenedores: `backend`, `postgres`, `redis` y, en el futuro, `celery_worker`. Variables de entorno en `.env` (nunca commiteado) con `.env.example` versionado; `DATABASE_URL` la construye Compose.
 
 ---
 
@@ -447,7 +453,9 @@ Evolución del proyecto, para no repetir debates:
 13. **Herramientas:** `uv`, `pytest-asyncio`, `testcontainers`, `structlog`, `ruff`, `import-linter`, CI desde la fase 1.
 14. **Layout real del repo:** `src/jev_ai/` con `uv_build` (en lugar de `app/`).
 15. **Subpaquete del motor (2026-11-12):** `src/jev_ai/ai/jev/`, confirmado con el usuario; evita la colisión `jev_ai.ai.jev_ai`.
-16. **Infra local (2026-11-12):** PostgreSQL 17 y Redis 7 con Docker Compose; puertos solo en `127.0.0.1` y PostgreSQL en 5433 por choque con el host. Límites de recursos: PostgreSQL 1 CPU / 512 MB y Redis 0.5 CPU / 256 MB. Sin Dockerfile hasta que exista backend.
+16. **Infra local (2026-11-12):** PostgreSQL 17 y Redis 7 con Docker Compose; puertos solo en `127.0.0.1` y PostgreSQL en 5433 por choque con el host. Límites de recursos: PostgreSQL 1 CPU / 512 MB y Redis 0.5 CPU / 256 MB. Sin Dockerfile hasta que exista backend. *(Superada por la decisión 18.)*
 17. **BD y auth adelantadas (2026-11-12):** por decisión del usuario, la fase 3 incluye SQLAlchemy async, Alembic, `organizations` y `api_keys`; la fase 4 queda para el modelo de marketing. Auth con cabecera `X-API-Key`, hash SHA-256 y `hmac.compare_digest`. Tests de integración con testcontainers/PostgreSQL 17 y `httpx2`.
+18. **Infraestructura interna (2026-11-12):** el backend corre en Compose y PostgreSQL/Redis dejan de publicar puertos. Solo la API se expone en `127.0.0.1:${BACKEND_PORT}`. La red `data` es interna; `DATABASE_URL` la construye Compose y migraciones/scripts se ejecutan dentro del contenedor. El objetivo es que ningún proceso del host acceda directamente a la base de datos.
+19. **Contratos TypeScript pospuestos (2026-11-12):** se descartó el espejo manual en `contracts/` porque duplicaba los DTO de Pydantic sin existir aún un frontend. Pydantic/OpenAPI siguen siendo la fuente de verdad; si se construye frontend, los tipos se generarán desde `/openapi.json`.
 
 Cuando se tome una decisión nueva, agrégala aquí con fecha.
