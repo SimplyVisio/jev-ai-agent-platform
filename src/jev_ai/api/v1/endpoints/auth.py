@@ -1,3 +1,5 @@
+"""Endpoints de identidad."""
+
 from typing import Annotated
 from uuid import UUID
 
@@ -10,6 +12,8 @@ router = APIRouter()
 
 
 class OrganizationResponse(BaseModel):
+    """Organización autenticada por la API key de la petición."""
+
     organization_id: UUID
 
 
@@ -17,4 +21,9 @@ class OrganizationResponse(BaseModel):
 async def me(
     context: Annotated[OrganizationContext, Depends(get_current_organization)],
 ) -> OrganizationResponse:
+    """Devuelve la organización asociada a la cabecera ``X-API-Key``.
+
+    Es un endpoint de diagnóstico; los recursos de negocio reutilizan la misma
+    dependencia de autenticación.
+    """
     return OrganizationResponse(organization_id=context.organization_id)

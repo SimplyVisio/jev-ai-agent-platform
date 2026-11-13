@@ -31,6 +31,28 @@ src/jev_ai/
 Cada módulo crea solo las capas que necesita: `models.py`, `schemas.py`,
 `repository.py` y `service.py`.
 
+## Contratos de API
+
+Pydantic define y valida los DTO; FastAPI publica el esquema en `/openapi.json`. Esa es
+la única fuente de verdad. No se mantiene un espejo manual en TypeScript: si se
+construye un frontend, sus tipos se generarán desde OpenAPI.
+
+## Infraestructura y redes
+
+```text
+host ──127.0.0.1:8000──> backend ──data──> postgres
+                                   └────> redis
+```
+
+- `backend` pertenece a `edge` y a `data`; atiende la API y alcanza la base de datos.
+- `postgres` y `redis` solo pertenecen a `data` y no publican puertos en el host.
+- `data` es una red interna de Docker: no tiene salida a Internet.
+- Compose construye `DATABASE_URL` dentro de la red con las variables `POSTGRES_*`;
+  no se versiona ni se usa desde el host.
+- Migraciones y scripts se ejecutan con `docker compose run --rm backend ...`.
+- El engine async se crea en el lifespan de FastAPI y se libera al apagarse.
+
+
 ## Capas y responsabilidades
 
 - **api:** HTTP, validación con Pydantic y dependencias de FastAPI.
