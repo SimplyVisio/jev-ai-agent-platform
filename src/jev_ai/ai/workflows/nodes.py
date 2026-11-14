@@ -14,7 +14,7 @@ from jev_ai.ai.jev.intents import Intent, IntentClassifier
 from jev_ai.ai.jev.plans import PlanParseError, parse_query_plan
 from jev_ai.ai.jev.policies import validate_query_plan
 from jev_ai.ai.llm.base import LLMProvider
-from jev_ai.ai.llm.mock import LLMError, LLMNoResponseError
+from jev_ai.ai.llm.errors import LLMError, LLMNoResponseError
 from jev_ai.ai.replies import HELP_TEXT, render_reply
 from jev_ai.ai.status import ChatStatus
 from jev_ai.ai.workflows.state import ChatState

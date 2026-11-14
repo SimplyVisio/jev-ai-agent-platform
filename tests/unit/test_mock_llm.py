@@ -6,12 +6,8 @@ import pytest
 
 from jev_ai.ai.jev.plans import parse_query_plan
 from jev_ai.ai.llm.base import LLMContext
-from jev_ai.ai.llm.mock import (
-    LLMConnectionError,
-    LLMNoResponseError,
-    MockLLMProvider,
-    MockResponse,
-)
+from jev_ai.ai.llm.errors import LLMConnectionError, LLMNoResponseError
+from jev_ai.ai.llm.mock import MockLLMProvider, MockResponse
 
 
 @pytest.mark.asyncio

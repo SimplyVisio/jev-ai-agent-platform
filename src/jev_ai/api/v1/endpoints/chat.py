@@ -1,20 +1,16 @@
-"""Endpoint de chat offline con QueryPlan y ejecución determinista."""
+"""Endpoint de chat con QueryPlan y ejecución determinista."""
 
 from typing import Annotated, Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field, StringConstraints
 
-from jev_ai.ai.chat import ChatService, ChatStatus
-from jev_ai.ai.jev.classifier import RuleBasedClassifier
+from jev_ai.ai.chat import ChatStatus
 from jev_ai.ai.jev.intents import Intent
 from jev_ai.ai.jev.plans import plan_to_dict
-from jev_ai.ai.llm.mock import MockLLMProvider
-from jev_ai.api.deps import OrganizationDep, SessionDep
+from jev_ai.api.deps import ChatServiceDep, OrganizationDep, SessionDep
 
 router = APIRouter(tags=["chat"])
-
-_chat_service = ChatService(RuleBasedClassifier(), MockLLMProvider.default())
 
 
 class ChatRequest(BaseModel):
@@ -46,9 +42,10 @@ async def chat(
     payload: ChatRequest,
     context: OrganizationDep,
     session: SessionDep,
+    chat_service: ChatServiceDep,
 ) -> ChatResponse:
     """Traduce el mensaje a QueryPlan, lo valida y ejecuta con SQLAlchemy."""
-    result = await _chat_service.handle(
+    result = await chat_service.handle(
         session,
         context.organization_id,
         payload.message,

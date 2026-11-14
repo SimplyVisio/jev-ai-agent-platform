@@ -11,12 +11,12 @@ responsabilidad tiene cada una. Se actualiza al cerrar cada fase.
 | `jev_ai/main.py` | Construye la app y gestiona el ciclo de vida del engine |
 | `jev_ai/config.py` | Configuración tipada desde entorno y `.env` |
 | `jev_ai/security.py` | Hashing de API keys |
-| `jev_ai/api/deps.py` | Sesión de BD y autenticación por API key |
+| `jev_ai/api/deps.py` | Sesión de BD, autenticación y servicios de chat |
 | `jev_ai/api/v1/endpoints/` | Endpoints HTTP |
 | `jev_ai/modules/organizations/` | Entidades y consultas de organizaciones |
 | `jev_ai/modules/conversations/` | Conversaciones, mensajes y transcript |
 | `jev_ai/ai/jev/` | Intenciones, QueryPlan, clasificador, políticas y evaluación |
-| `jev_ai/ai/llm/` | `LLMProvider`, mock y traductor offline |
+| `jev_ai/ai/llm/` | `LLMProvider`, mock, proveedor OpenAI, errores y factory |
 | `jev_ai/ai/chat.py` | Orquestación del chat stateless y persistente |
 | `jev_ai/ai/memory.py` | Contexto acotado de la conversación |
 | `jev_ai/infrastructure/database/` | Base declarativa, engine y sesiones |
@@ -35,6 +35,11 @@ Clase Pydantic que valida la configuración al arrancar. Campos:
 |---|---|---|
 | `app_name` | `APP_NAME` | Título de OpenAPI |
 | `database_url` | `DATABASE_URL` | DSN async de SQLAlchemy |
+| `llm_provider` | `LLM_PROVIDER` | `mock` (predeterminado) u `openai` |
+| `llm_api_key` | `LLM_API_KEY` | Clave del proveedor real |
+| `llm_model` | `LLM_MODEL` | Modelo enviado al proveedor |
+| `llm_base_url` | `LLM_BASE_URL` | Raíz de la API OpenAI-compatible |
+| `llm_timeout_seconds` | `LLM_TIMEOUT_SECONDS` | Timeout de la llamada |
 
 `Settings` no acepta campos extra (`extra="ignore"` descarta las variables de Compose
 que no le incumben).
@@ -43,6 +48,19 @@ que no le incumben).
 
 Devuelve una instancia cacheada con `lru_cache`. Evita releer el entorno en cada
 petición. Los tests no deben modificarla: inyectan `Settings` en `create_app`.
+
+### `build_llm_provider(settings)`
+
+En `ai/llm/factory.py`. Devuelve `MockLLMProvider` por defecto o
+`OpenAICompatibleProvider` si `llm_provider="openai"`. Falla al arrancar si falta la
+API key, en lugar de degradar silenciosamente a otro proveedor.
+
+### `OpenAICompatibleProvider`
+
+Implementa `LLMProvider` con `httpx`. Envía el catálogo cerrado como prompt de
+sistema, pide JSON (`response_format={"type": "json_object"}`) y devuelve el contenido.
+Timeout, red, HTTP y respuestas malformadas se traducen a errores de dominio. Acepta
+un `transport` de `httpx` solo para tests; no se usa en producción.
 
 ## Seguridad
 
@@ -303,7 +321,9 @@ con `StateGraph` y compila el flujo:
 
 La sesión viaja en `config["configurable"]["session"]`; el grafo se compila una vez en
 `ChatService` y no usa checkpointer. `ChatState` incluye el contexto acotado de la
-conversación cuando el turno es persistente.
+conversación cuando el turno es persistente. `create_app` construye el proveedor y los
+servicios una vez; `api/deps.py` los entrega como `ChatServiceDep` y
+`PersistentChatServiceDep`.
 
 ### `ChatService.handle(...)`
 
@@ -386,8 +406,9 @@ lifespan que crea y libera el engine, registra los routers y mapea
 
 `POST /api/v1/chat` valida el mensaje (1–1000 caracteres), inyecta la organización
 autenticada y delega en un `ChatService` que ejecuta el grafo de LangGraph con
-`RuleBasedClassifier` y `MockLLMProvider.default()`. `ChatResponse` expone estado, intención, confianza,
-respuesta, plan y datos.
+`RuleBasedClassifier` y el proveedor que devuelve `build_llm_provider`; ambos se
+construyen en `create_app` y se inyectan con `ChatServiceDep`. `ChatResponse` expone
+estado, intención, confianza, respuesta, plan y datos.
 
 ### `ConversationCreate`, `SendMessageRequest` y endpoints de conversaciones
 

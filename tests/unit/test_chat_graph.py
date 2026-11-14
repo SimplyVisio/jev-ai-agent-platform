@@ -8,11 +8,8 @@ import pytest
 from jev_ai.ai.jev.classifier import RuleBasedClassifier
 from jev_ai.ai.jev.plans import parse_query_plan
 from jev_ai.ai.llm.base import LLMContext, LLMProvider
-from jev_ai.ai.llm.mock import (
-    LLMConnectionError,
-    MockLLMProvider,
-    MockResponse,
-)
+from jev_ai.ai.llm.errors import LLMConnectionError
+from jev_ai.ai.llm.mock import MockLLMProvider, MockResponse
 from jev_ai.ai.status import ChatStatus
 from jev_ai.ai.workflows import build_chat_graph
 
