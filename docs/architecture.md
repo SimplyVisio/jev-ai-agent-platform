@@ -60,7 +60,7 @@ host ──127.0.0.1:8000──> backend ──data──> postgres
 - **repository:** acceso a datos con SQLAlchemy.
 - **ai/jev:** clasificación de intenciones y validación de planes; independiente de
   LangGraph y FastAPI.
-- **ai/llm:** interfaz `LLMProvider`, mock determinista y proveedor real futuro.
+- **ai/llm:** interfaz `LLMProvider`, mock determinista, proveedor OpenAI-compatible y factory.
 - **ai/workflows:** orquesta pasos y rutas; no contiene reglas de negocio.
 
 ## Reglas de dependencias
@@ -160,7 +160,7 @@ compila una vez y la sesión de BD se pasa en la configuración de cada invocaci
 mensaje
   → LangGraph: classify_intent → route_request
   → RuleBasedClassifier (ai/jev/classifier.py)
-  → MockLLMProvider (ai/llm/mock.py) propone un QueryPlan
+  → LLMProvider (mock u OpenAI-compatible) propone un QueryPlan
   → parse_query_plan (ai/jev/plans.py, catálogo cerrado)
   → validate_query_plan (ai/jev/policies.py)
   → execute_query_plan (services de analytics y marketing)
@@ -169,8 +169,11 @@ mensaje
 
 - `POST /api/v1/chat` es stateless (`api/v1/endpoints/chat.py`). Los endpoints de
   `/api/v1/conversations` persisten el hilo con `PersistentChatService`.
+- `build_llm_provider` elige el proveedor al arrancar: mock por defecto u
+  OpenAI-compatible si `LLM_PROVIDER=openai`. Los servicios se guardan en
+  `app.state` y se inyectan como dependencias.
 - El LLM nunca genera SQL ni decide la organización: el `organization_id` sale del
-  contexto autenticado.
+  contexto autenticado. El proveedor real solo devuelve JSON, que Pydantic valida.
 - JEV AI valida el plan con reglas deterministas (catálogo, rango máximo de 366 días,
   métricas no ordenables, nombre de campaña).
 - La respuesta se construye con plantillas a partir de los datos ya calculados, de

@@ -1,8 +1,9 @@
-# Chat offline y QueryPlan
+# Chat y QueryPlan
 
-El chat permite consultar campañas y anuncios en lenguaje natural sin proveedor LLM de
-pago, sin API key externa y sin túnel. Todo el flujo es determinista y se puede probar
-con pytest, Bruno o el cliente de terminal.
+El chat permite consultar campañas y anuncios en lenguaje natural. Por defecto usa un
+proveedor mock determinista, sin API key externa ni coste; también admite un proveedor
+OpenAI-compatible configurado por entorno. La ejecución, las políticas y las respuestas
+siguen siendo deterministas: el LLM solo propone el plan.
 
 ## Flujo
 
@@ -10,7 +11,7 @@ con pytest, Bruno o el cliente de terminal.
 START
   → classify_intent       RuleBasedClassifier (JEV AI)
   → route_request         help | clarify | plan
-  → propose_plan          MockLLMProvider / plan_builder + parse_query_plan
+  → propose_plan          LLMProvider (mock u OpenAI) + parse_query_plan
   → validate_plan         validate_query_plan (JEV AI)
   → execute_service       execute_query_plan (analytics + marketing)
   → generate_response     render_reply (plantilla con datos reales)
@@ -50,7 +51,7 @@ La memoria es explícita y acotada:
 - las comparaciones no se infieren: requieren dos periodos explícitos;
 - el `organization_id` de la conversación sale siempre de la API key.
 
-Un futuro proveedor LLM recibe el contexto en
+El proveedor LLM recibe el contexto en
 `LLMProvider.generate(..., context=LLMContext)`, con los mensajes y el último plan.
 
 ## Catálogo cerrado
@@ -103,7 +104,19 @@ del contexto autenticado.
 Las rutas condicionales están en `ChatNodes.route_after_*`. Los nodos no calculan
 métricas ni permisos: delegan en los servicios existentes.
 
-## Mock LLM
+## Proveedores LLM
+
+`LLMProvider` es la interfaz única. `build_llm_provider(Settings)` elige la
+implementación al arrancar la aplicación:
+
+- `LLM_PROVIDER=mock` (predeterminado): `MockLLMProvider`, sin red ni API key.
+- `LLM_PROVIDER=openai`: `OpenAICompatibleProvider`, que llama a
+  `{LLM_BASE_URL}/chat/completions` con `LLM_API_KEY` y `LLM_MODEL`.
+
+La app construye `ChatService` y `PersistentChatService` una vez y los expone como
+dependencias de FastAPI. Cambiar de proveedor no cambia el grafo ni los endpoints.
+
+### Mock
 
 `MockLLMProvider` implementa `LLMProvider` y puede:
 
@@ -120,8 +133,25 @@ Cuando recibe un `LLMContext`, el mock intenta primero el mensaje actual y, si n
 produce plan, reutiliza el último plan válido para cambiar periodo o métrica. Es una
 memoria determinista y limitada, no una comprensión semántica completa.
 
-El endpoint usa `MockLLMProvider.default()` en `api/v1/endpoints/chat.py`. Cambiar a un
-proveedor real solo requiere implementar `LLMProvider` e inyectarlo en `ChatService`.
+### OpenAI-compatible
+
+`OpenAICompatibleProvider` envía el catálogo cerrado en el prompt del sistema y pide
+`response_format={"type": "json_object"}` con temperatura 0. Devuelve el contenido tal
+cual; `parse_query_plan` lo valida con Pydantic. Los errores HTTP, de red y de timeout
+se traducen a `LLMError`, `LLMConnectionError` o `LLMTimeoutError`.
+
+Configuración:
+
+```bash
+LLM_PROVIDER=openai
+LLM_API_KEY=sk-...
+LLM_MODEL=gpt-4o-mini
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_TIMEOUT_SECONDS=30
+```
+
+Los tests no llaman a OpenAI: usan `httpx.MockTransport`. La respuesta final se sigue
+generando con plantillas, no con texto libre del modelo.
 
 ## Datos de demo
 
@@ -160,6 +190,7 @@ Ver [`evaluation.md`](evaluation.md) para métricas, umbrales y limitaciones.
 - Sin checkpointer: el grafo no reanuda ejecuciones interrumpidas.
 - La memoria es un contexto acotado; no hay resumen ni memoria semántica completa.
 - Los seguimientos de comparación necesitan periodos explícitos.
-- Sin proveedor LLM real.
+- El proveedor real requiere API key, red y presupuesto; el mock sigue siendo el
+  predeterminado.
 - Las respuestas se generan con plantillas; el LLM solo propone el plan.
 - `compare_periods` compara el resumen de la organización, no una campaña concreta.

@@ -7,6 +7,9 @@ from importlib.metadata import version
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from jev_ai.ai.chat import ChatService, PersistentChatService
+from jev_ai.ai.jev.classifier import RuleBasedClassifier
+from jev_ai.ai.llm.factory import build_llm_provider
 from jev_ai.api.v1.endpoints.health import router as health_router
 from jev_ai.api.v1.router import api_router
 from jev_ai.config import Settings, get_settings
@@ -51,6 +54,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Crea el engine al arrancar y lo libera al apagar la aplicación."""
         engine = create_database_engine(resolved_settings.database_url)
         app.state.session_factory = create_session_factory(engine)
+        app.state.chat_service = ChatService(
+            RuleBasedClassifier(),
+            build_llm_provider(resolved_settings),
+        )
+        app.state.persistent_chat_service = PersistentChatService(
+            app.state.chat_service,
+        )
         try:
             yield
         finally:

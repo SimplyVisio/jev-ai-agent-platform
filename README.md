@@ -10,16 +10,15 @@ cálculos de métricas son deterministas y deben funcionar con el chatbot apagad
 
 ## Estado
 
-Fases 1 a 6 completadas: API FastAPI con configuración tipada, autenticación por API
-key contra PostgreSQL, migraciones con Alembic, modelo de marketing (`campaigns`,
-`ads` y `ad_insights`), CRUD de campañas y anuncios y API de analítica con métricas
-agregadas.
+Hito 1 completo: API FastAPI con configuración tipada, autenticación por API key
+contra PostgreSQL, migraciones con Alembic, modelo de marketing (`campaigns`, `ads` y
+`ad_insights`), CRUD de campañas y anuncios y API de analítica con métricas agregadas.
 
-Además, hay un **chat offline** que traduce lenguaje natural a un `QueryPlan`
-validado y lo ejecuta con SQLAlchemy. Funciona sin API key de ningún proveedor LLM y
-sin túnel: el LLM es un mock determinista y el flujo se orquesta con LangGraph. El
-clasificador se evalúa con un dataset versionado (accuracy, precision, recall y F1) y
-CI falla si baja de los umbrales.
+Además, hay un chat que traduce lenguaje natural a un `QueryPlan` validado y lo
+ejecuta con SQLAlchemy. Por defecto usa un **mock determinista**, sin API key ni coste;
+también admite un proveedor **OpenAI-compatible** configurado por entorno. El flujo se
+orquesta con LangGraph y el clasificador se evalúa con un dataset versionado
+(accuracy, precision, recall y F1); CI falla si baja de los umbrales.
 
 Las conversaciones se persisten en PostgreSQL (`conversations` y `messages`) con
 memoria acotada: los últimos 10 mensajes y 4000 caracteres, más el último plan para
@@ -42,7 +41,7 @@ Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 | testcontainers | Tests de integración con PostgreSQL real |
 | LangGraph | Orquestación del flujo de chat |
 | LLM mock determinista | Capa de IA offline (QueryPlan + políticas JEV AI) |
-| LLM real | Proveedor futuro; misma interfaz que el mock |
+| OpenAI-compatible | Proveedor real opcional; misma interfaz que el mock |
 | Dataset + métricas | Evaluación del clasificador en CI |
 
 ## Requisitos
@@ -54,7 +53,7 @@ Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 ## Puesta en marcha
 
 ```bash
-cp .env.example .env    # ajusta POSTGRES_PASSWORD
+cp .env.example .env    # ajusta POSTGRES_PASSWORD; LLM_PROVIDER=mock por defecto
 uv sync
 docker compose up -d --build --wait
 docker compose run --rm backend alembic upgrade head
@@ -124,7 +123,7 @@ El esquema OpenAPI en `/openapi.json` es el contrato fuente de la API. Si más a
 se construye un frontend TypeScript, sus tipos se generarán desde ese esquema; no se
 mantiene un espejo manual.
 
-## Chat offline
+## Chat
 
 ```bash
 curl -s http://127.0.0.1:8000/api/v1/chat \
@@ -136,6 +135,27 @@ curl -s http://127.0.0.1:8000/api/v1/chat \
 La respuesta trae el estado, la intención, la confianza, el texto, el `query_plan`
 validado y los datos. Los mensajes ambiguos devuelven `needs_clarification` con una
 petición de aclaración; `dry_run: true` valida el plan sin consultar la base de datos.
+
+### Proveedor LLM real
+
+El mock es el predeterminado. Para usar OpenAI, define las variables en `.env` y
+reconstruye el backend:
+
+```bash
+LLM_PROVIDER=openai
+LLM_API_KEY=sk-...
+LLM_MODEL=gpt-4o-mini
+LLM_BASE_URL=https://api.openai.com/v1
+```
+
+```bash
+docker compose up -d --build --wait backend
+```
+
+El proveedor solo propone el `QueryPlan` en JSON; la validación de JEV AI, el acceso a
+datos y la respuesta por plantilla no cambian. Los tests usan un transporte HTTP falso:
+no consumen la API real. Si la clave falta, la aplicación falla al arrancar en vez de
+volver silenciosamente al mock.
 
 ### Conversaciones persistentes
 
@@ -156,7 +176,8 @@ plan. La memoria usa los últimos 10 mensajes (4000 caracteres); un seguimiento 
 “¿Y en septiembre?” reutiliza el plan anterior con el nuevo periodo. El `data` de
 analítica no se duplica en la tabla.
 
-Cliente de terminal, sin dependencias extra:
+Cliente de terminal, sin dependencias extra. Usa `/chat` (stateless), así que sirve
+para probar el proveedor configurado, pero no la memoria persistente:
 
 ```bash
 JEV_API_KEY="jev_..." python scripts/chat_cli.py
@@ -210,7 +231,7 @@ docker compose up -d --build --wait        # reconstruir tras cambiar código o 
 src/jev_ai/          paquete de la aplicación
   api/               routers y dependencias HTTP
   modules/           dominios de negocio
-  ai/                capa de IA: JEV AI, LLM mock, chat y workflows (LangGraph)
+  ai/                capa de IA: JEV AI, proveedores LLM, chat y workflows
   infrastructure/    base de datos y sesiones
 alembic/             migraciones
 mocks/datasets/      dataset de mensajes e intenciones
@@ -229,7 +250,7 @@ Dockerfile           imagen del backend
 
 - [`docs/architecture.md`](docs/architecture.md): arquitectura del backend.
 - [`docs/api.md`](docs/api.md): contrato HTTP de todos los endpoints.
-- [`docs/chat.md`](docs/chat.md): flujo de chat, QueryPlan, políticas y mocks.
+- [`docs/chat.md`](docs/chat.md): flujo de chat, QueryPlan, políticas y proveedores.
 - [`docs/evaluation.md`](docs/evaluation.md): dataset y métricas del clasificador.
 - [`docs/metrics.md`](docs/metrics.md): fórmulas y reglas de agregación.
 - [`docs/code-reference.md`](docs/code-reference.md): funciones, clases y contratos.

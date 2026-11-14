@@ -11,23 +11,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from jev_ai.ai.llm.base import LLMContext, LLMProvider
+from jev_ai.ai.llm.errors import LLMError, LLMNoResponseError
 from jev_ai.ai.llm.plan_builder import build_follow_up_plan, build_plan_from_message
-
-
-class LLMError(Exception):
-    """Error genérico del proveedor de lenguaje."""
-
-
-class LLMConnectionError(LLMError):
-    """El proveedor no pudo conectarse."""
-
-
-class LLMTimeoutError(LLMError):
-    """El proveedor agotó el tiempo de espera."""
-
-
-class LLMNoResponseError(LLMError):
-    """El mock no encontró una respuesta ni pudo construir un plan."""
 
 
 @dataclass(frozen=True)

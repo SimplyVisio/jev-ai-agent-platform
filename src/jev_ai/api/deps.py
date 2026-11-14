@@ -10,6 +10,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from jev_ai.ai.chat import ChatService, PersistentChatService
 from jev_ai.modules.organizations.repository import find_api_key_by_hash
 from jev_ai.security import hash_api_key
 
@@ -70,5 +71,20 @@ async def get_current_organization(
     return OrganizationContext(organization_id=record.organization_id)
 
 
+def get_chat_service(request: Request) -> ChatService:
+    """Devuelve el servicio de chat configurado para la aplicación."""
+    return request.app.state.chat_service
+
+
+def get_persistent_chat_service(request: Request) -> PersistentChatService:
+    """Devuelve el servicio de conversaciones configurado para la aplicación."""
+    return request.app.state.persistent_chat_service
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 OrganizationDep = Annotated[OrganizationContext, Depends(get_current_organization)]
+ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
+PersistentChatServiceDep = Annotated[
+    PersistentChatService,
+    Depends(get_persistent_chat_service),
+]

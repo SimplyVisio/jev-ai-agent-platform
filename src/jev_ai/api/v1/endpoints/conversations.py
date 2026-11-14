@@ -6,13 +6,14 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from jev_ai.ai.chat import ChatService, PersistentChatService
-from jev_ai.ai.jev.classifier import RuleBasedClassifier
 from jev_ai.ai.jev.intents import Intent
 from jev_ai.ai.jev.plans import plan_to_dict
-from jev_ai.ai.llm.mock import MockLLMProvider
 from jev_ai.ai.status import ChatStatus
-from jev_ai.api.deps import OrganizationDep, SessionDep
+from jev_ai.api.deps import (
+    OrganizationDep,
+    PersistentChatServiceDep,
+    SessionDep,
+)
 from jev_ai.modules.conversations import service
 from jev_ai.modules.conversations.schemas import (
     ConversationCreate,
@@ -22,10 +23,6 @@ from jev_ai.modules.conversations.schemas import (
 )
 
 router = APIRouter(tags=["conversations"])
-
-_persistent_chat = PersistentChatService(
-    ChatService(RuleBasedClassifier(), MockLLMProvider.default())
-)
 
 
 class ConversationChatResponse(BaseModel):
@@ -114,9 +111,10 @@ async def send_message(
     payload: SendMessageRequest,
     context: OrganizationDep,
     session: SessionDep,
+    persistent_chat: PersistentChatServiceDep,
 ) -> ConversationChatResponse:
     """Procesa un mensaje y persiste el turno completo."""
-    outcome = await _persistent_chat.send_message(
+    outcome = await persistent_chat.send_message(
         session,
         context.organization_id,
         conversation_id,
