@@ -327,9 +327,14 @@ servicios una vez; `api/deps.py` los entrega como `ChatServiceDep` y
 
 ### `ChatService.handle(...)`
 
-Construye el estado inicial, invoca el grafo y convierte el estado final en
-`ChatResult` (`status`, `intent`, `confidence`, `reply`, `query_plan`, `data`). Acepta
-`conversation_id` y `context` opcionales; no persiste nada.
+Construye el estado inicial, consume `graph.astream(..., stream_mode="updates")` y
+convierte el estado final en `ChatResult` (`status`, `intent`, `confidence`, `reply`,
+`query_plan`, `data`, `trace`). Acepta `conversation_id` y `context` opcionales; no
+persiste nada.
+
+`ChatTraceStep` guarda `node`, `detail` y `duration_ms`. La traza se calcula siempre
+pero solo se serializa si el cliente envía `debug=true`; no incluye filas completas ni
+el `organization_id`.
 
 ### `PersistentChatService.send_message(...)`
 
@@ -449,7 +454,8 @@ está curado con el mismo vocabulario que las reglas.
 ### `scripts/chat_cli.py`
 
 Cliente HTTP de terminal basado en `urllib`. Acepta `--api-key` o `JEV_API_KEY`,
-`--message`, `--dry-run` y `--show-plan`. Sin `--message` abre un bucle interactivo.
+`--message`, `--dry-run`, `--show-plan` y `--debug`. Sin `--message` abre un bucle
+interactivo. Usa `/chat`, por lo que no conserva memoria entre turnos.
 
 ## Clases abstractas e interfaces
 

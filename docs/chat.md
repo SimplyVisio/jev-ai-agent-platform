@@ -54,6 +54,24 @@ La memoria es explícita y acotada:
 El proveedor LLM recibe el contexto en
 `LLMProvider.generate(..., context=LLMContext)`, con los mensajes y el último plan.
 
+## Traza para depuración
+
+`POST /api/v1/chat` y `POST /api/v1/conversations/{id}/messages` aceptan
+`"debug": true`. La respuesta incluye `trace`, construida con los updates reales de
+`graph.astream(..., stream_mode="updates")`:
+
+```text
+1. classify_intent   intent, confianza y regla
+2. propose_plan      plan propuesto o motivo de aclaración
+3. validate_plan     aceptado o violaciones de JEV AI
+4. execute_service   consulta real a PostgreSQL vía SQLAlchemy
+5. generate_response respuesta desde plantilla
+```
+
+La CLI lo muestra con `--debug`. No se añade un paso de caché porque el backend no
+cachea resultados todavía; Redis está disponible en Compose pero no participa en este
+flujo. Tampoco se exponen filas completas ni el `organization_id`.
+
 ## Catálogo cerrado
 
 | Operación | Parámetros | Función |

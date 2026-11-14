@@ -5,6 +5,7 @@ No necesita dependencias extra: usa ``urllib`` de la biblioteca estándar.
 Uso:
     python scripts/chat_cli.py --api-key "jev_..."
     python scripts/chat_cli.py --api-key "jev_..." --message "Top 3 anuncios por ROAS"
+    python scripts/chat_cli.py --api-key "jev_..." --debug
     JEV_API_KEY="jev_..." python scripts/chat_cli.py
 """
 
@@ -15,9 +16,16 @@ import urllib.error
 import urllib.request
 
 
-def send_message(base_url: str, api_key: str, message: str, *, dry_run: bool) -> dict:
+def send_message(
+    base_url: str,
+    api_key: str,
+    message: str,
+    *,
+    dry_run: bool,
+    debug: bool = False,
+) -> dict:
     """Envía un mensaje al endpoint de chat y devuelve el JSON de respuesta."""
-    payload = json.dumps({"message": message, "dry_run": dry_run}).encode("utf-8")
+    payload = json.dumps({"message": message, "dry_run": dry_run, "debug": debug}).encode("utf-8")
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}/api/v1/chat",
         data=payload,
@@ -31,12 +39,17 @@ def send_message(base_url: str, api_key: str, message: str, *, dry_run: bool) ->
         return json.loads(response.read().decode("utf-8"))
 
 
-def _print_response(body: dict, *, show_plan: bool) -> None:
+def _print_response(body: dict, *, show_plan: bool, show_trace: bool) -> None:
     print(f"\nJEV AI [{body['status']} · {body['intent']}]:")
     print(body["reply"])
     if show_plan and body.get("query_plan"):
         print("\nQueryPlan validado:")
         print(json.dumps(body["query_plan"], indent=2, ensure_ascii=False))
+    if show_trace and body.get("trace"):
+        print("\nTraza LangGraph:")
+        for index, step in enumerate(body["trace"], start=1):
+            print(f"  {index}. {step['node']} ({step['duration_ms']:.2f} ms)")
+            print(f"     {step['detail']}")
 
 
 def main() -> None:
@@ -46,6 +59,7 @@ def main() -> None:
     parser.add_argument("--message", default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--show-plan", action="store_true")
+    parser.add_argument("--debug", action="store_true", help="Muestra la traza del grafo.")
     args = parser.parse_args()
 
     if not args.api_key:
@@ -53,14 +67,20 @@ def main() -> None:
 
     if args.message:
         try:
-            body = send_message(args.base_url, args.api_key, args.message, dry_run=args.dry_run)
+            body = send_message(
+                args.base_url,
+                args.api_key,
+                args.message,
+                dry_run=args.dry_run,
+                debug=args.debug,
+            )
         except urllib.error.HTTPError as exc:
             print(f"Error HTTP {exc.code}: {exc.read().decode('utf-8', errors='replace')}")
             raise SystemExit(1) from exc
         except urllib.error.URLError as exc:
             print(f"No se pudo conectar con la API: {exc.reason}")
             raise SystemExit(1) from exc
-        _print_response(body, show_plan=args.show_plan)
+        _print_response(body, show_plan=args.show_plan, show_trace=args.debug)
         return
 
     print("Chat de JEV AI. Escribe 'salir' para terminar.")
@@ -80,6 +100,7 @@ def main() -> None:
                 args.api_key,
                 message,
                 dry_run=args.dry_run,
+                debug=args.debug,
             )
         except urllib.error.HTTPError as exc:
             print(f"Error HTTP {exc.code}: {exc.read().decode('utf-8', errors='replace')}")
@@ -87,7 +108,7 @@ def main() -> None:
         except urllib.error.URLError as exc:
             print(f"No se pudo conectar con la API: {exc.reason}")
             continue
-        _print_response(body, show_plan=args.show_plan)
+        _print_response(body, show_plan=args.show_plan, show_trace=args.debug)
 
 
 if __name__ == "__main__":

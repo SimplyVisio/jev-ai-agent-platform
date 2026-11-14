@@ -1,6 +1,7 @@
 """Entrada de la capa de chat: delega el flujo en el grafo de LangGraph."""
 
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +23,15 @@ from jev_ai.modules.conversations.models import (
 
 
 @dataclass(frozen=True)
+class ChatTraceStep:
+    """Evento real de un nodo del grafo para depuración."""
+
+    node: str
+    detail: str
+    duration_ms: float
+
+
+@dataclass(frozen=True)
 class ChatResult:
     """Resultado interno que el endpoint serializa."""
 
@@ -31,6 +41,7 @@ class ChatResult:
     reply: str
     query_plan: QueryPlan | None = None
     data: Any = None
+    trace: tuple[ChatTraceStep, ...] = ()
 
 
 class ChatService:
@@ -63,7 +74,28 @@ class ChatService:
             "user_id": None,
         }
         config: RunnableConfig = {"configurable": {"session": session}}
-        final_state = await self._graph.ainvoke(initial_state, config)
+        final_state: ChatState = dict(initial_state)
+        trace: list[ChatTraceStep] = []
+        last_step = perf_counter()
+
+        async for update in self._graph.astream(
+            initial_state,
+            config,
+            stream_mode="updates",
+        ):
+            now = perf_counter()
+            for node, node_update in update.items():
+                if not isinstance(node_update, dict):
+                    continue
+                final_state.update(node_update)
+                trace.append(
+                    ChatTraceStep(
+                        node=node,
+                        detail=_describe_step(node, final_state),
+                        duration_ms=round((now - last_step) * 1000, 2),
+                    )
+                )
+                last_step = now
 
         return ChatResult(
             status=final_state.get("status", ChatStatus.ERROR),
@@ -72,6 +104,7 @@ class ChatService:
             reply=final_state.get("reply", ""),
             query_plan=final_state.get("plan"),
             data=final_state.get("data"),
+            trace=tuple(trace),
         )
 
 
@@ -83,6 +116,44 @@ class PersistentChatResult:
     conversation: Conversation
     user_message: Message
     assistant_message: Message
+
+
+def _describe_step(node: str, state: ChatState) -> str:
+    """Resume un nodo sin exponer datos sensibles ni resultados completos."""
+    if node == "classify_intent":
+        return (
+            f"intent={state.get('intent', Intent.UNKNOWN).value}; "
+            f"confidence={state.get('confidence', 0.0):.2f}; "
+            f"rule={state.get('intent_reason', '-')}"
+        )
+    if node == "propose_plan":
+        plan = state.get("plan")
+        if plan is None:
+            return f"sin plan; status={state.get('status', ChatStatus.NEEDS_CLARIFICATION).value}"
+        return f"plan={plan_to_dict(plan)}"
+    if node == "validate_plan":
+        if state.get("status") is ChatStatus.NEEDS_CLARIFICATION:
+            return f"plan rechazado; errores={state.get('errors', [])}"
+        return "plan aceptado por las políticas de JEV AI"
+    if node == "execute_service":
+        plan = state.get("plan")
+        if plan is None:
+            return "sin plan para ejecutar"
+        data = state.get("data")
+        rows = len(data) if isinstance(data, list) else 1 if data is not None else 0
+        return (
+            "consultando PostgreSQL con SQLAlchemy: "
+            f"{plan.operation.value} {plan.date_from}→{plan.date_to}; filas={rows}"
+        )
+    if node == "generate_response":
+        return f"generando respuesta desde plantilla; caracteres={len(state.get('reply', ''))}"
+    if node == "help":
+        return "ayuda resuelta sin LLM ni PostgreSQL"
+    if node == "clarify":
+        return "aclaración solicitada al usuario"
+    if node == "error":
+        return "error del proveedor de lenguaje"
+    return "nodo ejecutado"
 
 
 class PersistentChatService:

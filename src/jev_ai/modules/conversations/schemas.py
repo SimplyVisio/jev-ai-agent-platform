@@ -57,3 +57,4 @@ class SendMessageRequest(BaseModel):
     """Mensaje del usuario dentro de una conversación."""
 
     message: MessageText
+    debug: bool = False

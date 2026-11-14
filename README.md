@@ -183,7 +183,13 @@ para probar el proveedor configurado, pero no la memoria persistente:
 JEV_API_KEY="jev_..." python scripts/chat_cli.py
 JEV_API_KEY="jev_..." python scripts/chat_cli.py --message "Compara este mes con el mes pasado"
 JEV_API_KEY="jev_..." python scripts/chat_cli.py --show-plan
+JEV_API_KEY="jev_..." python scripts/chat_cli.py --debug
 ```
+
+`--debug` muestra la traza real de LangGraph: clasificación, plan, validación,
+consulta a PostgreSQL y generación de la respuesta, con tiempos por nodo. No inventa
+un paso de caché: hoy el backend no cachea resultados; Redis está levantado pero la
+aplicación todavía no lo usa.
 
 Colección HTTP para Bruno en [`bruno/jev-ai`](bruno/jev-ai): importa la carpeta,
 selecciona el entorno `Local`, sustituye `apiKey` por tu clave y `conversationId` por

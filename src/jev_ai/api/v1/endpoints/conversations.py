@@ -14,6 +14,7 @@ from jev_ai.api.deps import (
     PersistentChatServiceDep,
     SessionDep,
 )
+from jev_ai.api.v1.schemas import TraceStep
 from jev_ai.modules.conversations import service
 from jev_ai.modules.conversations.schemas import (
     ConversationCreate,
@@ -37,6 +38,7 @@ class ConversationChatResponse(BaseModel):
     reply: str
     query_plan: dict[str, Any] | None = None
     data: Any = None
+    trace: list[TraceStep] | None = None
 
 
 @router.post("", response_model=ConversationRead, status_code=201)
@@ -131,4 +133,5 @@ async def send_message(
         reply=result.reply,
         query_plan=(None if result.query_plan is None else plan_to_dict(result.query_plan)),
         data=result.data,
+        trace=[TraceStep.model_validate(step) for step in result.trace] if payload.debug else None,
     )
