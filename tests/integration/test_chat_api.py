@@ -177,6 +177,51 @@ def test_chat_top_ads_returns_ranked_data(
     assert "Top 2 anuncios por ROAS" in body["reply"]
 
 
+def test_chat_debug_returns_real_graph_trace(
+    client: TestClient,
+    chat_seed: tuple[ChatSeed, ChatSeed],
+) -> None:
+    alpha, _beta = chat_seed
+
+    body = post_chat(
+        client,
+        alpha.key,
+        "¿Cuáles son los 2 mejores anuncios por ROAS en octubre de 2026?",
+        debug=True,
+    )
+
+    trace = body["trace"]
+    assert [step["node"] for step in trace] == [
+        "classify_intent",
+        "propose_plan",
+        "validate_plan",
+        "execute_service",
+        "generate_response",
+    ]
+    assert "rule=top_ads_keyword" in trace[0]["detail"]
+    assert "top_ads_by_metric" in trace[1]["detail"]
+    assert "plan aceptado" in trace[2]["detail"]
+    assert "consultando PostgreSQL" in trace[3]["detail"]
+    assert "filas=2" in trace[3]["detail"]
+    assert "generando respuesta" in trace[4]["detail"]
+    assert all(step["duration_ms"] >= 0 for step in trace)
+
+
+def test_chat_without_debug_does_not_expose_trace(
+    client: TestClient,
+    chat_seed: tuple[ChatSeed, ChatSeed],
+) -> None:
+    alpha, _beta = chat_seed
+
+    body = post_chat(
+        client,
+        alpha.key,
+        "¿Cuáles son los 2 mejores anuncios por ROAS en octubre de 2026?",
+    )
+
+    assert body["trace"] is None
+
+
 def test_chat_campaign_performance_uses_org_context(
     client: TestClient,
     chat_seed: tuple[ChatSeed, ChatSeed],

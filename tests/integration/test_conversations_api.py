@@ -107,10 +107,12 @@ def send_message(
     key: str,
     conversation_id: str,
     message: str,
+    *,
+    debug: bool = False,
 ) -> dict:
     response = client.post(
         f"/api/v1/conversations/{conversation_id}/messages",
-        json={"message": message},
+        json={"message": message, "debug": debug},
         headers=headers(key),
     )
     assert response.status_code == 201, response.text
@@ -177,6 +179,44 @@ def test_top_ads_message_persists_the_plan(
     assert assistant["query_plan"]["operation"] == "top_ads_by_metric"
     assert assistant["query_plan"]["metric"] == "roas"
     assert "data" not in assistant
+
+
+def test_send_message_debug_returns_graph_trace(
+    client: TestClient,
+    conversation_seed: tuple[ConversationSeed, ConversationSeed],
+) -> None:
+    alpha, _beta = conversation_seed
+    conversation = create_conversation(client, alpha.key)
+
+    body = send_message(
+        client,
+        alpha.key,
+        conversation["id"],
+        "Top 2 anuncios por ROAS en octubre de 2026",
+        debug=True,
+    )
+
+    assert [step["node"] for step in body["trace"]] == [
+        "classify_intent",
+        "propose_plan",
+        "validate_plan",
+        "execute_service",
+        "generate_response",
+    ]
+    assert body["data"][0]["ad_name"] == "Memory Winner"
+    assert messages(client, alpha.key, conversation["id"])[1]["query_plan"] is not None
+
+
+def test_send_message_without_debug_has_no_trace(
+    client: TestClient,
+    conversation_seed: tuple[ConversationSeed, ConversationSeed],
+) -> None:
+    alpha, _beta = conversation_seed
+    conversation = create_conversation(client, alpha.key)
+
+    body = send_message(client, alpha.key, conversation["id"], "Hola")
+
+    assert body["trace"] is None
 
 
 def test_follow_up_uses_persisted_memory(

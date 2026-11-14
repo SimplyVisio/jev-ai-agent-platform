@@ -9,6 +9,7 @@ from jev_ai.ai.chat import ChatStatus
 from jev_ai.ai.jev.intents import Intent
 from jev_ai.ai.jev.plans import plan_to_dict
 from jev_ai.api.deps import ChatServiceDep, OrganizationDep, SessionDep
+from jev_ai.api.v1.schemas import TraceStep
 
 router = APIRouter(tags=["chat"])
 
@@ -24,6 +25,10 @@ class ChatRequest(BaseModel):
         default=False,
         description="Valida y devuelve el plan sin ejecutar la consulta.",
     )
+    debug: bool = Field(
+        default=False,
+        description="Incluye la traza de nodos y tiempos del grafo.",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -35,6 +40,7 @@ class ChatResponse(BaseModel):
     reply: str
     query_plan: dict[str, Any] | None = None
     data: Any = None
+    trace: list[TraceStep] | None = None
 
 
 @router.post("", response_model=ChatResponse)
@@ -58,4 +64,5 @@ async def chat(
         reply=result.reply,
         query_plan=None if result.query_plan is None else plan_to_dict(result.query_plan),
         data=result.data,
+        trace=[TraceStep.model_validate(step) for step in result.trace] if payload.debug else None,
     )

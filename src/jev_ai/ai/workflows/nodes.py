@@ -41,6 +41,7 @@ class ChatNodes:
         return {
             "intent": result.intent,
             "confidence": result.confidence,
+            "intent_reason": result.reason,
         }
 
     def route_after_classify(self, state: ChatState) -> Literal["help", "clarify", "plan"]:

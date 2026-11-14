@@ -24,6 +24,7 @@ class ChatState(TypedDict):
     user_id: UUID | None
     intent: NotRequired[Intent]
     confidence: NotRequired[float]
+    intent_reason: NotRequired[str]
     plan: NotRequired[QueryPlan | None]
     data: NotRequired[Any]
     reply: NotRequired[str]

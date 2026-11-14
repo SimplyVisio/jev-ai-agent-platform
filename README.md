@@ -183,7 +183,25 @@ para probar el proveedor configurado, pero no la memoria persistente:
 JEV_API_KEY="jev_..." python scripts/chat_cli.py
 JEV_API_KEY="jev_..." python scripts/chat_cli.py --message "Compara este mes con el mes pasado"
 JEV_API_KEY="jev_..." python scripts/chat_cli.py --show-plan
+JEV_API_KEY="jev_..." python scripts/chat_cli.py --debug
 ```
+
+`--debug` muestra la traza real de LangGraph: clasificación, plan, validación,
+consulta a PostgreSQL y generación de la respuesta, con tiempos por nodo. No inventa
+un paso de caché: hoy el backend no cachea resultados; Redis está levantado pero la
+aplicación todavía no lo usa.
+
+Para depurar el mock sin depender de una API externa, deja `LLM_PROVIDER=mock` en
+`.env`, reconstruye el backend y ejecuta el mismo CLI:
+
+```bash
+docker compose up -d --build --wait backend
+JEV_API_KEY="jev_..." uv run python scripts/chat_cli.py \
+  --message "Top 2 anuncios por ROAS en octubre de 2026" --debug
+```
+
+No hay un CLI separado para el mock: `--debug` sirve tanto para el mock como para
+OpenAI y muestra qué regla del clasificador y qué plan se usaron.
 
 Colección HTTP para Bruno en [`bruno/jev-ai`](bruno/jev-ai): importa la carpeta,
 selecciona el entorno `Local`, sustituye `apiKey` por tu clave y `conversationId` por
@@ -208,6 +226,30 @@ docker compose down -v                         # detener y borrar datos
 
 Los contenedores tienen límites de recursos: PostgreSQL 1 CPU / 512 MB, Redis
 0.5 CPU / 256 MB y backend 1 CPU / 512 MB.
+
+## Despliegue
+
+Todavía no hay un proveedor cloud elegido ni manifiestos de Terraform/Kubernetes. El
+procedimiento reproducible con Docker Compose es:
+
+1. Copiar `.env.example` a `.env` y definir una contraseña fuerte, `LLM_PROVIDER` y,
+   si se usa OpenAI, `LLM_API_KEY`. No versionar `.env`.
+2. Construir y arrancar: `docker compose up -d --build --wait`.
+3. Aplicar migraciones: `docker compose run --rm backend alembic upgrade head`.
+4. Crear la organización y su API key una sola vez:
+   `docker compose run --rm backend python scripts/create_api_key.py --organization "Producción"`.
+5. Sembrar datos solo en demo/staging; en producción no ejecutes `scripts/seed.py`.
+6. Verificar `curl -fsS http://127.0.0.1:8000/health` y revisar
+   `docker compose ps` y `docker compose logs backend`.
+7. Poner un proxy inverso con TLS delante de la API. No publiques PostgreSQL ni
+   Redis: deben seguir en la red interna `data`.
+8. Configurar backups de PostgreSQL, retención de logs y límites de recursos antes
+   de abrir tráfico real.
+
+El Compose actual publica la API solo en `127.0.0.1:8000`. En un servidor remoto hay
+que adaptar ese binding o conectar el proxy a la red `edge`; no se debe exponer
+directamente PostgreSQL ni Redis. Si más adelante se elige un proveedor cloud, faltan
+los manifiestos específicos de despliegue, secretos gestionados y observabilidad.
 
 ## Comandos
 

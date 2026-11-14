@@ -69,12 +69,14 @@ historial, usa los endpoints de conversaciones.
 ```json
 {
   "message": "¿Cuáles son los 3 mejores anuncios por ROAS en octubre de 2026?",
-  "dry_run": false
+  "dry_run": false,
+  "debug": false
 }
 ```
 
 `message` tiene entre 1 y 1000 caracteres. `dry_run=true` valida el plan sin ejecutar
-la consulta.
+la consulta. `debug=true` añade `trace`, la secuencia real de nodos del grafo con
+tiempos y detalles acotados; sin él, `trace` es `null`.
 
 ### Respuesta
 
@@ -129,6 +131,18 @@ la consulta.
 `query_plan` se incluye cuando existe un plan, incluso si fue rechazado. `data` es
 `null` cuando no se ejecutó ninguna consulta.
 
+Con `debug=true`, `trace` contiene elementos como:
+
+```json
+[
+  {"node": "classify_intent", "detail": "intent=top_ads_by_metric; confidence=0.95; rule=top_ads_keyword", "duration_ms": 0.12},
+  {"node": "propose_plan", "detail": "plan={...}", "duration_ms": 0.45},
+  {"node": "validate_plan", "detail": "plan aceptado por las políticas de JEV AI", "duration_ms": 0.08},
+  {"node": "execute_service", "detail": "consultando PostgreSQL con SQLAlchemy: top_ads_by_metric ...", "duration_ms": 8.21},
+  {"node": "generate_response", "detail": "generando respuesta desde plantilla; caracteres=120", "duration_ms": 0.03}
+]
+```
+
 Detalles del flujo, catálogo y políticas en [`chat.md`](chat.md).
 
 ## Conversaciones persistentes
@@ -180,6 +194,9 @@ Content-Type: application/json
   "data": []
 }
 ```
+
+El POST del mensaje también acepta `"debug": true`; la respuesta incluye `trace` con
+los mismos pasos que `/chat`. La traza no se persiste.
 
 Cada mensaje del asistente guarda `intent`, `confidence`, `status` y `query_plan` para
 auditoría. El `data` completo de la respuesta no se duplica en la tabla: se devuelve
