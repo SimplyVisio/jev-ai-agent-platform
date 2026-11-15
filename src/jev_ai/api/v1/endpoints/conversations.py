@@ -30,6 +30,7 @@ class ConversationChatResponse(BaseModel):
     """Respuesta del chat persistente con identificadores de auditoría."""
 
     conversation_id: UUID
+    trace_id: UUID
     user_message_id: UUID
     assistant_message_id: UUID
     status: ChatStatus
@@ -125,6 +126,7 @@ async def send_message(
     result = outcome.result
     return ConversationChatResponse(
         conversation_id=outcome.conversation.id,
+        trace_id=result.trace_id,
         user_message_id=outcome.user_message.id,
         assistant_message_id=outcome.assistant_message.id,
         status=result.status,

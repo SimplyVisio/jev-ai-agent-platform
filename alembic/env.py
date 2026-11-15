@@ -11,6 +11,7 @@ from jev_ai.infrastructure.database.base import Base
 from jev_ai.modules.conversations import models as conversations_models  # noqa: F401
 from jev_ai.modules.marketing import models as marketing_models  # noqa: F401
 from jev_ai.modules.organizations import models  # noqa: F401
+from jev_ai.observability import models as observability_models  # noqa: F401
 
 config = context.config
 

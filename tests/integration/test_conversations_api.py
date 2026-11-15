@@ -7,10 +7,12 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from jev_ai.modules.marketing.models import Ad, AdInsight, Campaign
 from jev_ai.modules.organizations.models import ApiKey, Organization
+from jev_ai.observability.models import ModelCall, Trace
 from jev_ai.security import hash_api_key
 
 
@@ -179,6 +181,49 @@ def test_top_ads_message_persists_the_plan(
     assert assistant["query_plan"]["operation"] == "top_ads_by_metric"
     assert assistant["query_plan"]["metric"] == "roas"
     assert "data" not in assistant
+
+
+async def test_send_message_links_messages_and_trace(
+    client: TestClient,
+    conversation_seed: tuple[ConversationSeed, ConversationSeed],
+    migrated_database_url: str,
+) -> None:
+    alpha, _beta = conversation_seed
+    conversation = create_conversation(client, alpha.key)
+
+    body = send_message(
+        client,
+        alpha.key,
+        conversation["id"],
+        "Top 2 anuncios por ROAS en octubre de 2026",
+    )
+    trace_id = UUID(body["trace_id"])
+
+    transcript = messages(client, alpha.key, conversation["id"])
+    assert [item["trace_id"] for item in transcript] == [str(trace_id), str(trace_id)]
+
+    engine = create_async_engine(migrated_database_url)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def read_trace() -> tuple[Trace | None, list[ModelCall]]:
+        async with factory() as session:
+            trace = await session.get(Trace, trace_id)
+            calls = list(
+                (
+                    await session.scalars(select(ModelCall).where(ModelCall.trace_id == trace_id))
+                ).all()
+            )
+            return trace, calls
+
+    try:
+        trace, calls = await read_trace()
+    finally:
+        await engine.dispose()
+    assert trace is not None
+    assert trace.conversation_id == UUID(conversation["id"])
+    assert trace.organization_id == alpha.organization_id
+    assert trace.status == "ok"
+    assert len(calls) == 1
 
 
 def test_send_message_debug_returns_graph_trace(

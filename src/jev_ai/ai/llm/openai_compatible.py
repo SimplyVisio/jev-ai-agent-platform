@@ -7,13 +7,14 @@ from typing import Any
 import httpx
 
 from jev_ai.ai.jev.plans import MetricName, plan_to_dict
-from jev_ai.ai.llm.base import ContextMessage, LLMContext, LLMProvider
+from jev_ai.ai.llm.base import ContextMessage, LLMContext, LLMProvider, LLMResult
 from jev_ai.ai.llm.errors import (
     LLMConnectionError,
     LLMError,
     LLMNoResponseError,
     LLMTimeoutError,
 )
+from jev_ai.observability.usage import TokenUsage
 
 _SYSTEM_PROMPT = f"""Eres el planificador de consultas de JEV AI.
 Tu única salida debe ser un objeto JSON válido, sin markdown ni explicaciones.
@@ -68,13 +69,23 @@ class OpenAICompatibleProvider(LLMProvider):
         self._timeout = timeout
         self._transport = transport
 
+    @property
+    def provider_name(self) -> str:
+        """Identidad usada en las métricas de observabilidad."""
+        return "openai"
+
+    @property
+    def model_name(self) -> str:
+        """Modelo configurado para las peticiones."""
+        return self._model
+
     async def generate(
         self,
         prompt: str,
         *,
         context: LLMContext | None = None,
-    ) -> str:
-        """Pide al modelo un plan JSON y devuelve su contenido sin interpretarlo."""
+    ) -> LLMResult:
+        """Pide al modelo un plan JSON y devuelve contenido y uso."""
         payload: dict[str, Any] = {
             "model": self._model,
             "messages": self._build_messages(prompt, context),
@@ -112,7 +123,10 @@ class OpenAICompatibleProvider(LLMProvider):
 
         if not isinstance(content, str) or not content.strip():
             raise LLMNoResponseError("OpenAI returned an empty message")
-        return content
+        return LLMResult(
+            content=content,
+            usage=_usage_from_response(data.get("usage")),
+        )
 
     @staticmethod
     def _build_messages(
@@ -143,3 +157,34 @@ def _format_context(messages: tuple[ContextMessage, ...]) -> str:
     lines = ["Contexto reciente (del más antiguo al más nuevo):"]
     lines.extend(f"{message.role}: {message.content}" for message in messages)
     return "\n".join(lines)
+
+
+def _usage_from_response(value: object) -> TokenUsage | None:
+    """Normaliza el uso de OpenAI, donde los tokens cacheados son un subconjunto."""
+    if not isinstance(value, dict):
+        return None
+    prompt_tokens = _as_int(value.get("prompt_tokens"))
+    completion_tokens = _as_int(value.get("completion_tokens"))
+    prompt_details = value.get("prompt_tokens_details")
+    completion_details = value.get("completion_tokens_details")
+    cached_tokens = _as_int(
+        prompt_details.get("cached_tokens") if isinstance(prompt_details, dict) else None
+    )
+    reasoning_tokens = _as_int(
+        completion_details.get("reasoning_tokens") if isinstance(completion_details, dict) else None
+    )
+    return TokenUsage(
+        input_tokens=max(prompt_tokens - cached_tokens, 0),
+        output_tokens=completion_tokens,
+        cached_input_tokens=cached_tokens,
+        reasoning_tokens=reasoning_tokens,
+    )
+
+
+def _as_int(value: object) -> int:
+    """Convierte contadores opcionales de la API a enteros no negativos."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(value, 0)
+    return 0

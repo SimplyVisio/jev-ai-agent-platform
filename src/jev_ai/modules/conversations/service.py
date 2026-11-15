@@ -144,6 +144,7 @@ async def add_message(
     confidence: float | None = None,
     status: str | None = None,
     query_plan: dict[str, Any] | None = None,
+    trace_id: UUID | None = None,
 ) -> Message:
     """Añade un mensaje sin confirmar la transacción.
 
@@ -159,6 +160,7 @@ async def add_message(
         confidence=confidence,
         status=status,
         query_plan=query_plan,
+        trace_id=trace_id,
     )
     session.add(message)
     await session.flush()

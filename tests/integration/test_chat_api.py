@@ -7,10 +7,12 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from jev_ai.modules.marketing.models import Ad, AdInsight, Campaign
 from jev_ai.modules.organizations.models import ApiKey, Organization
+from jev_ai.observability.models import ModelCall, Span, Trace
 from jev_ai.security import hash_api_key
 
 
@@ -207,6 +209,72 @@ def test_chat_debug_returns_real_graph_trace(
     assert all(step["duration_ms"] >= 0 for step in trace)
 
 
+async def test_chat_returns_trace_id_and_persists_observability(
+    client: TestClient,
+    chat_seed: tuple[ChatSeed, ChatSeed],
+    migrated_database_url: str,
+) -> None:
+    alpha, _beta = chat_seed
+    message = "¿Cuáles son los 2 mejores anuncios por ROAS en octubre de 2026?"
+
+    response = client.post(
+        "/api/v1/chat",
+        json={"message": message},
+        headers=headers(alpha.key),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    trace_id = UUID(body["trace_id"])
+    assert response.headers["x-trace-id"] == str(trace_id)
+
+    engine = create_async_engine(migrated_database_url)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def read_trace() -> tuple[Trace, list[Span], list[ModelCall]]:
+        async with factory() as session:
+            trace = await session.get(Trace, trace_id)
+            assert trace is not None
+            spans = list(
+                (
+                    await session.scalars(
+                        select(Span).where(Span.trace_id == trace_id).order_by(Span.started_at)
+                    )
+                ).all()
+            )
+            calls = list(
+                (
+                    await session.scalars(select(ModelCall).where(ModelCall.trace_id == trace_id))
+                ).all()
+            )
+            return trace, spans, calls
+
+    try:
+        trace, spans, calls = await read_trace()
+    finally:
+        await engine.dispose()
+    assert trace.organization_id == alpha.organization_id
+    assert trace.conversation_id is None
+    assert trace.status == "ok"
+    assert trace.intent == "top_ads_by_metric"
+    assert trace.details is not None
+    assert trace.details["message_chars"] == len(message)
+    assert "message" not in trace.details
+    assert [span.name for span in spans] == [
+        "classify_intent",
+        "propose_plan",
+        "validate_plan",
+        "execute_service",
+        "generate_response",
+    ]
+    assert all(span.trace_id == trace_id for span in spans)
+    assert len(calls) == 1
+    assert calls[0].provider == "mock"
+    assert calls[0].model == "deterministic"
+    assert calls[0].status == "ok"
+    assert calls[0].estimated_cost_usd is None
+
+
 def test_chat_without_debug_does_not_expose_trace(
     client: TestClient,
     chat_seed: tuple[ChatSeed, ChatSeed],
@@ -359,6 +427,7 @@ def test_chat_requires_api_key(client: TestClient) -> None:
     response = client.post("/api/v1/chat", json={"message": "Hola"})
 
     assert response.status_code == 401
+    assert UUID(response.headers["x-trace-id"])
 
 
 def test_chat_validates_message(

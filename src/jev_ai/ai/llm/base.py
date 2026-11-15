@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from jev_ai.ai.jev.plans import QueryPlan
+from jev_ai.observability.usage import TokenUsage
 
 
 @dataclass(frozen=True)
@@ -27,12 +28,32 @@ class LLMContext:
     last_plan: QueryPlan | None = None
 
 
+@dataclass(frozen=True)
+class LLMResult:
+    """Contenido generado y uso facturable reportado por el proveedor."""
+
+    content: str
+    usage: TokenUsage | None = None
+    service_tier: str = "standard"
+
+
 class LLMProvider(ABC):
     """Contrato mínimo de un proveedor de lenguaje.
 
-    El proveedor real se añadirá después. El resto del sistema solo depende de esta
-    interfaz, de modo que el mock determinista puede sustituirlo sin cambiar el flujo.
+    El resto del sistema solo depende de esta interfaz, de modo que el mock
+    determinista puede sustituir al proveedor real sin cambiar el flujo. Las
+    propiedades de identidad permiten registrar la llamada sin adivinar el modelo.
     """
+
+    @property
+    def provider_name(self) -> str:
+        """Nombre estable del proveedor para métricas."""
+        return self.__class__.__name__
+
+    @property
+    def model_name(self) -> str:
+        """Modelo usado por el proveedor; el mock no tiene uno real."""
+        return "unknown"
 
     @abstractmethod
     async def generate(
@@ -40,7 +61,7 @@ class LLMProvider(ABC):
         prompt: str,
         *,
         context: LLMContext | None = None,
-    ) -> str:
+    ) -> LLMResult:
         """Genera una respuesta de texto para el mensaje del usuario.
 
         ``context`` es opcional: los proveedores reales pueden incorporarlo al prompt;

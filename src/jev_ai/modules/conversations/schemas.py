@@ -50,6 +50,7 @@ class MessageRead(BaseModel):
     confidence: float | None
     status: str | None
     query_plan: dict[str, Any] | None
+    trace_id: UUID | None
     created_at: datetime
 
 
