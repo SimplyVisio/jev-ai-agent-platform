@@ -21,7 +21,7 @@ src/jev_ai/
 │   ├── analytics/          cálculo y exposición de métricas
 │   └── conversations/      conversaciones, mensajes y contexto
 ├── ai/                     capa de IA (usa modules/, nunca al revés)
-│   ├── jev/                clasificación y validación del motor JEV AI
+│   ├── jev/                clasificación, validación y cliente TypeSafe
 │   ├── llm/                interfaz LLMProvider y proveedores
 │   └── workflows/          orquestación con LangGraph
 ├── observability/          trazas, spans, costes y logging
@@ -168,7 +168,7 @@ compila una vez y la sesión de BD se pasa en la configuración de cada invocaci
 ```text
 mensaje
   → LangGraph: classify_intent → route_request
-  → RuleBasedClassifier (ai/jev/classifier.py)
+  → JevIntentClassifier (JEV_PROVIDER=mock|typesafe)
   → LLMProvider (mock u OpenAI-compatible) propone un QueryPlan
   → parse_query_plan (ai/jev/plans.py, catálogo cerrado)
   → validate_query_plan (ai/jev/policies.py)
@@ -178,9 +178,9 @@ mensaje
 
 - `POST /api/v1/chat` es stateless (`api/v1/endpoints/chat.py`). Los endpoints de
   `/api/v1/conversations` persisten el hilo con `PersistentChatService`.
-- `build_llm_provider` elige el proveedor al arrancar: mock por defecto u
-  OpenAI-compatible si `LLM_PROVIDER=openai`. Los servicios se guardan en
-  `app.state` y se inyectan como dependencias.
+- `build_decision_provider` elige Jev mock por defecto o TypeSafe con
+  `JEV_PROVIDER=typesafe`; `build_llm_provider` elige el LLM mock u OpenAI-compatible.
+  Los servicios se guardan en `app.state` y se inyectan como dependencias.
 - El LLM nunca genera SQL ni decide la organización: el `organization_id` sale del
   contexto autenticado. El proveedor real solo devuelve JSON, que Pydantic valida.
 - JEV AI valida el plan con reglas deterministas (catálogo, rango máximo de 366 días,
@@ -193,10 +193,15 @@ mensaje
   `ai/memory.py`; el último plan permite resolver seguimientos deterministas.
 - El clasificador se evalúa contra `mocks/datasets/intents.json`; CI exige accuracy y
   macro F1 mínimos. Ver [`evaluation.md`](evaluation.md).
+- `ai/jev/contracts.py` y `ai/jev/client.py` definen el contrato y el cliente de
+  TypeSafe System One. `JevIntentClassifier` usa `DecisionProvider` para clasificar;
+  el mock es el predeterminado y TypeSafe se activa por entorno. El cliente reintenta
+  `429`/`529`; ver [`jev.md`](jev.md).
 - Decisiones: `docs/decisions/0001-offline-llm-mocks.md`,
   `docs/decisions/0002-conversation-persistence.md`,
-  `docs/decisions/0003-openai-provider.md` y
-  `docs/decisions/0004-observability.md`.
+  `docs/decisions/0003-openai-provider.md`,
+  `docs/decisions/0004-observability.md` y
+  `docs/decisions/0005-typesafe-jev-client.md`.
 
 ## Observabilidad
 

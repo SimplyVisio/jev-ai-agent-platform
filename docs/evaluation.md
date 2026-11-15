@@ -50,6 +50,11 @@ Eso **no significa** que generalice a cualquier frase: el dataset está curado p
 vocabulario cerrado de las reglas y comparte sus términos. La métrica sirve para
 detectar regresiones, no como estimación de producción.
 
+El chat usa `JevIntentClassifier` con `MockDecisionProvider` por defecto. Ese mock
+responde la pregunta de intención con las mismas reglas, así que conserva el resultado
+del dataset, pero no evalúa la calidad de TypeSafe. Medir Jev real contra este dataset
+sigue pendiente.
+
 ## Limitaciones y siguientes pasos
 
 - El dataset es pequeño y está escrito por la misma persona que las reglas; hay sesgo

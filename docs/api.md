@@ -146,7 +146,7 @@ Con `debug=true`, `trace` contiene elementos como:
 
 ```json
 [
-  {"node": "classify_intent", "detail": "intent=top_ads_by_metric; confidence=0.95; rule=top_ads_keyword", "duration_ms": 0.12},
+  {"node": "classify_intent", "detail": "intent=top_ads_by_metric; confidence=0.95; reason=jev:mock:deterministic", "duration_ms": 0.12},
   {"node": "propose_plan", "detail": "plan={...}", "duration_ms": 0.45},
   {"node": "validate_plan", "detail": "plan aceptado por las políticas de JEV AI", "duration_ms": 0.08},
   {"node": "execute_service", "detail": "consultando PostgreSQL con SQLAlchemy: top_ads_by_metric ...", "duration_ms": 8.21},
@@ -257,6 +257,9 @@ Configuración relacionada:
 | `LOG_LEVEL` | `DEBUG`, `INFO` (predeterminado), `WARNING`, `ERROR` o `CRITICAL` |
 | `LLM_PROVIDER` | `mock` (predeterminado) u `openai` |
 | `LLM_MODEL` | Modelo usado para estimar tokens y coste |
+| `JEV_PROVIDER` | `mock` (predeterminado) o `typesafe` |
+| `TYPESAFE_API_KEY` | Clave obligatoria con `JEV_PROVIDER=typesafe` |
+| `JEV_MODEL` | Modelo de Jev (`jev-1.13.0` por defecto) |
 
 ## Ejemplo con curl
 

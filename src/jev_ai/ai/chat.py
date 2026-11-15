@@ -206,7 +206,7 @@ def _describe_step(node: str, state: ChatState) -> str:
         return (
             f"intent={state.get('intent', Intent.UNKNOWN).value}; "
             f"confidence={state.get('confidence', 0.0):.2f}; "
-            f"rule={state.get('intent_reason', '-')}"
+            f"reason={state.get('intent_reason', '-')}"
         )
     if node == "propose_plan":
         plan = state.get("plan")

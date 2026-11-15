@@ -12,7 +12,9 @@ from fastapi.responses import JSONResponse, Response
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from jev_ai.ai.chat import ChatService, PersistentChatService
-from jev_ai.ai.jev.classifier import RuleBasedClassifier
+from jev_ai.ai.jev.classifier import JevIntentClassifier, RuleBasedClassifier
+from jev_ai.ai.jev.factory import build_decision_provider
+from jev_ai.ai.jev.instrumented import InstrumentedDecisionProvider
 from jev_ai.ai.llm.factory import build_llm_provider
 from jev_ai.ai.llm.instrumented import InstrumentedLLMProvider
 from jev_ai.api.v1.endpoints.health import router as health_router
@@ -86,8 +88,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Crea el engine al arrancar y lo libera al apagar la aplicación."""
         engine = create_database_engine(resolved_settings.database_url)
         app.state.session_factory = create_session_factory(engine)
+        classifier = JevIntentClassifier(
+            InstrumentedDecisionProvider(build_decision_provider(resolved_settings)),
+            fallback=RuleBasedClassifier(),
+        )
         app.state.chat_service = ChatService(
-            RuleBasedClassifier(),
+            classifier,
             InstrumentedLLMProvider(build_llm_provider(resolved_settings)),
             session_factory=app.state.session_factory,
         )
