@@ -1,6 +1,7 @@
 """Endpoint de chat con QueryPlan y ejecución determinista."""
 
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field, StringConstraints
@@ -34,6 +35,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """Respuesta del chatbot con trazabilidad del plan."""
 
+    trace_id: UUID
     status: ChatStatus
     intent: Intent
     confidence: float
@@ -58,6 +60,7 @@ async def chat(
         dry_run=payload.dry_run,
     )
     return ChatResponse(
+        trace_id=result.trace_id,
         status=result.status,
         intent=result.intent,
         confidence=result.confidence,

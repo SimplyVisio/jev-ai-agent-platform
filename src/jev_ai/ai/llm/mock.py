@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from jev_ai.ai.llm.base import LLMContext, LLMProvider
+from jev_ai.ai.llm.base import LLMContext, LLMProvider, LLMResult
 from jev_ai.ai.llm.errors import LLMError, LLMNoResponseError
 from jev_ai.ai.llm.plan_builder import build_follow_up_plan, build_plan_from_message
 
@@ -53,12 +53,22 @@ class MockLLMProvider(LLMProvider):
         self._error = error
         self._planner = planner
 
+    @property
+    def provider_name(self) -> str:
+        """Identidad usada en las métricas de observabilidad."""
+        return "mock"
+
+    @property
+    def model_name(self) -> str:
+        """El mock no consume un modelo real."""
+        return "deterministic"
+
     async def generate(
         self,
         prompt: str,
         *,
         context: LLMContext | None = None,
-    ) -> str:
+    ) -> LLMResult:
         """Devuelve una respuesta fija o un plan JSON determinista."""
         if self._delay > 0:
             await asyncio.sleep(self._delay)
@@ -67,13 +77,13 @@ class MockLLMProvider(LLMProvider):
 
         for response in self._responses:
             if response.matches(prompt):
-                return response.response
+                return LLMResult(content=response.response)
 
         plan = self._planner(prompt)
         if plan is None and context is not None:
             plan = build_follow_up_plan(prompt, context)
         if plan is not None:
-            return json.dumps(plan, ensure_ascii=False)
+            return LLMResult(content=json.dumps(plan, ensure_ascii=False))
         raise LLMNoResponseError("No mock response or plan for the prompt")
 
     @classmethod

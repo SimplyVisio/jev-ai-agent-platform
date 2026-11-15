@@ -24,6 +24,7 @@ src/jev_ai/
 │   ├── jev/                clasificación y validación del motor JEV AI
 │   ├── llm/                interfaz LLMProvider y proveedores
 │   └── workflows/          orquestación con LangGraph
+├── observability/          trazas, spans, costes y logging
 ├── integrations/meta_ads/  transformación de datos externos (fase final)
 └── infrastructure/         base de datos, Redis
 ```
@@ -62,6 +63,8 @@ host ──127.0.0.1:8000──> backend ──data──> postgres
   LangGraph y FastAPI.
 - **ai/llm:** interfaz `LLMProvider`, mock determinista, proveedor OpenAI-compatible y factory.
 - **ai/workflows:** orquesta pasos y rutas; no contiene reglas de negocio.
+- **observability:** trazas, spans, llamadas a modelos, costes y logging; es
+  best-effort y no participa en las transacciones de negocio.
 
 ## Reglas de dependencias
 
@@ -126,11 +129,14 @@ organizations 1─N ads
 organizations 1─N ad_insights
 organizations 1─N conversations 1─N messages
 organizations 1─N messages
+organizations 1─N traces 1─N spans
+organizations 1─N model_calls
 ```
 
-Las siete tablas existen. `campaigns`, `ads` y `ad_insights` viven en
+Las diez tablas existen. `campaigns`, `ads` y `ad_insights` viven en
 `modules/marketing/models.py`; `conversations` y `messages` en
-`modules/conversations/models.py`. Las migraciones están en `alembic/versions/`.
+`modules/conversations/models.py`; `traces`, `spans` y `model_calls` en
+`observability/models.py`. Las migraciones están en `alembic/versions/`.
 
 - `campaigns` y `ads` desnormalizan `organization_id` para filtrar sin joins.
 - `objective` y `status` son `VARCHAR`; el catálogo cerrado vive en `StrEnum` de Python
@@ -150,6 +156,9 @@ Las siete tablas existen. `campaigns`, `ads` y `ad_insights` viven en
 - El asistente guarda `intent`, `confidence`, `status` y `query_plan` en JSONB. El
   `data` de analítica no se duplica; se puede reproducir desde el plan.
 - El borrado es en cascada: organización → conversaciones → mensajes.
+- `traces`, `spans` y `model_calls` desnormalizan `organization_id` y se indexan por
+  organización y fecha. `messages.trace_id` no tiene FK para que un fallo de
+  telemetría no condicione el turno; `traces.conversation_id` sí la tiene.
 
 ## Chat y conversaciones (sin Redis)
 
@@ -184,8 +193,24 @@ mensaje
   `ai/memory.py`; el último plan permite resolver seguimientos deterministas.
 - El clasificador se evalúa contra `mocks/datasets/intents.json`; CI exige accuracy y
   macro F1 mínimos. Ver [`evaluation.md`](evaluation.md).
-- Decisiones: `docs/decisions/0001-offline-llm-mocks.md` y
-  `docs/decisions/0002-conversation-persistence.md`.
+- Decisiones: `docs/decisions/0001-offline-llm-mocks.md`,
+  `docs/decisions/0002-conversation-persistence.md`,
+  `docs/decisions/0003-openai-provider.md` y
+  `docs/decisions/0004-observability.md`.
+
+## Observabilidad
+
+Cada petición recibe un `trace_id` UUID generado por el middleware. Se propaga por
+contextvars a structlog, se devuelve en `X-Trace-ID` y, en el chat, se persiste junto
+con spans y llamadas a modelos. `ChatService` escribe la traza en una sesión
+independiente; `PersistentChatService` espera a confirmar el turno de negocio y la
+escribe después para no retener el `SELECT ... FOR UPDATE` de la conversación.
+
+La telemetría no guarda prompts, mensajes ni respuestas completas. Los costes son
+estimaciones con `Decimal` y `price_version`; un modelo o tier desconocido deja el
+coste en `null`. Redis no participa en la ingesta: la escritura es directa a
+PostgreSQL y best-effort. Para volumen alto se evaluará retención, particionado o un
+worker, no Pub/Sub como cola fiable.
 
 ## Principios de diseño
 

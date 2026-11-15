@@ -35,11 +35,11 @@ def provider(handler) -> OpenAICompatibleProvider:
     )
 
 
-def response_with_content(content: str) -> httpx.Response:
-    return httpx.Response(
-        200,
-        json={"choices": [{"message": {"content": content}}]},
-    )
+def response_with_content(content: str, usage: dict | None = None) -> httpx.Response:
+    body = {"choices": [{"message": {"content": content}}]}
+    if usage is not None:
+        body["usage"] = usage
+    return httpx.Response(200, json=body)
 
 
 @pytest.mark.asyncio
@@ -53,7 +53,7 @@ async def test_returns_json_content_and_sends_expected_payload() -> None:
 
     result = await provider(handler).generate("Top 3 anuncios por ROAS en octubre de 2026")
 
-    assert json.loads(result) == _PLAN
+    assert json.loads(result.content) == _PLAN
     request = captured["request"]
     assert str(request.url) == "https://llm.example/v1/chat/completions"
     assert request.headers["authorization"] == "Bearer test-key"
@@ -145,6 +145,45 @@ async def test_empty_message_is_reported_as_no_response() -> None:
 
     with pytest.raises(LLMNoResponseError):
         await provider(handler).generate("consulta")
+
+
+@pytest.mark.asyncio
+async def test_normalizes_usage_and_cached_tokens() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return response_with_content(
+            json.dumps(_PLAN),
+            usage={
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "prompt_tokens_details": {"cached_tokens": 40},
+                "completion_tokens_details": {"reasoning_tokens": 5},
+            },
+        )
+
+    result = await provider(handler).generate("consulta")
+
+    assert result.usage is not None
+    assert result.usage.input_tokens == 60
+    assert result.usage.cached_input_tokens == 40
+    assert result.usage.output_tokens == 20
+    assert result.usage.reasoning_tokens == 5
+
+
+@pytest.mark.asyncio
+async def test_missing_usage_is_allowed() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return response_with_content(json.dumps(_PLAN))
+
+    result = await provider(handler).generate("consulta")
+
+    assert result.usage is None
+
+
+def test_exposes_provider_and_model_names() -> None:
+    instance = provider(lambda _request: response_with_content("{}"))
+
+    assert instance.provider_name == "openai"
+    assert instance.model_name == "test-model"
 
 
 def test_rejects_blank_api_key() -> None:

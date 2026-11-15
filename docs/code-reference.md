@@ -19,6 +19,7 @@ responsabilidad tiene cada una. Se actualiza al cerrar cada fase.
 | `jev_ai/ai/llm/` | `LLMProvider`, mock, proveedor OpenAI, errores y factory |
 | `jev_ai/ai/chat.py` | Orquestación del chat stateless y persistente |
 | `jev_ai/ai/memory.py` | Contexto acotado de la conversación |
+| `jev_ai/observability/` | Trazas, spans, llamadas a modelos, costes y logging |
 | `jev_ai/infrastructure/database/` | Base declarativa, engine y sesiones |
 | `scripts/create_api_key.py` | Procedimiento de alta de organización y clave |
 | `scripts/seed.py` | Datos sintéticos reproducibles |
@@ -40,6 +41,7 @@ Clase Pydantic que valida la configuración al arrancar. Campos:
 | `llm_model` | `LLM_MODEL` | Modelo enviado al proveedor |
 | `llm_base_url` | `LLM_BASE_URL` | Raíz de la API OpenAI-compatible |
 | `llm_timeout_seconds` | `LLM_TIMEOUT_SECONDS` | Timeout de la llamada |
+| `log_level` | `LOG_LEVEL` | Nivel mínimo del logging JSON |
 
 `Settings` no acepta campos extra (`extra="ignore"` descarta las variables de Compose
 que no le incumben).
@@ -58,9 +60,13 @@ API key, en lugar de degradar silenciosamente a otro proveedor.
 ### `OpenAICompatibleProvider`
 
 Implementa `LLMProvider` con `httpx`. Envía el catálogo cerrado como prompt de
-sistema, pide JSON (`response_format={"type": "json_object"}`) y devuelve el contenido.
-Timeout, red, HTTP y respuestas malformadas se traducen a errores de dominio. Acepta
-un `transport` de `httpx` solo para tests; no se usa en producción.
+sistema, pide JSON (`response_format={"type": "json_object"}`) y devuelve `LLMResult`
+con el contenido y el `TokenUsage` normalizado. Timeout, red, HTTP y respuestas
+malformadas se traducen a errores de dominio. Acepta un `transport` de `httpx` solo
+para tests; no se usa en producción.
+
+`InstrumentedLLMProvider` decora cualquier `LLMProvider`: mide latencia, registra la
+llamada en `model_calls` y calcula el coste estimado sin cambiar el resultado.
 
 ## Seguridad
 
@@ -329,8 +335,10 @@ servicios una vez; `api/deps.py` los entrega como `ChatServiceDep` y
 
 Construye el estado inicial, consume `graph.astream(..., stream_mode="updates")` y
 convierte el estado final en `ChatResult` (`status`, `intent`, `confidence`, `reply`,
-`query_plan`, `data`, `trace`). Acepta `conversation_id` y `context` opcionales; no
-persiste nada.
+`query_plan`, `data`, `trace`, `trace_id`). Acepta `conversation_id`, `context`,
+`trace_recorder` y `persist_trace` opcionales. Por defecto persiste la traza en una
+sesión independiente al terminar; el chat persistente lo difiere hasta después del
+commit de negocio.
 
 `ChatTraceStep` guarda `node`, `detail` y `duration_ms`. La traza se calcula siempre
 pero solo se serializa si el cliente envía `debug=true`; no incluye filas completas ni
@@ -340,8 +348,10 @@ el `organization_id`.
 
 Bloquea la conversación, carga el contexto con `load_context`, asigna `sequence`,
 ejecuta `ChatService.handle` y guarda usuario y asistente en una sola transacción.
-Devuelve `PersistentChatResult` con las entidades y el resultado del chat. Vive en
-`ai/chat.py` para que `modules/conversations` no dependa de la capa de IA.
+Después del commit persiste la traza fuera de esa transacción para no retener el
+bloqueo de la conversación. Devuelve `PersistentChatResult` con las entidades y el
+resultado del chat. Vive en `ai/chat.py` para que `modules/conversations` no dependa
+de la capa de IA.
 
 ### `load_context(...)` y `trim_context(...)`
 
@@ -364,6 +374,24 @@ organización autenticada. `top_ads_by_metric` ordena agregados ya calculados y 
 
 Genera el texto final con plantillas y los datos validados; no deja que el LLM invente
 cifras. `HELP_TEXT` documenta ejemplos de uso.
+
+## Observabilidad
+
+Vive en `observability/` y no importa de `ai/` ni de `api/`.
+
+| Elemento | Responsabilidad |
+|---|---|
+| `Trace`, `Span`, `ModelCall` | Modelos ORM de trazas, pasos y llamadas a modelos |
+| `TraceRecorder` | Acumula spans/calls y los persiste en una sesión independiente |
+| `TokenUsage` | Normaliza tokens de entrada, caché, salida y razonamiento |
+| `estimate_cost` / `PRICE_VERSION` | Estima coste con `Decimal` y tarifas versionadas |
+| `configure_logging` | structlog JSON con `trace_id` desde contextvars |
+| `InstrumentedLLMProvider` | Mide y registra cada llamada al proveedor |
+
+La persistencia es best-effort: `TraceRecorder.persist` captura excepciones, registra
+`trace_persist_failed` y devuelve `False`; nunca convierte un fallo de telemetría en un
+fallo de la petición. La traza inserta primero `traces` y hace `flush` antes de
+`spans` y `model_calls` para respetar las FK sin depender de relaciones ORM.
 
 ## Capa HTTP
 

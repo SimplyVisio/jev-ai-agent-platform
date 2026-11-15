@@ -22,7 +22,9 @@ orquesta con LangGraph y el clasificador se evalúa con un dataset versionado
 
 Las conversaciones se persisten en PostgreSQL (`conversations` y `messages`) con
 memoria acotada: los últimos 10 mensajes y 4000 caracteres, más el último plan para
-resolver seguimientos. Redis sigue fuera de esta fase.
+resolver seguimientos. Cada petición genera un `trace_id` y el chat guarda trazas,
+spans y llamadas a modelos con tokens y coste estimado, sin almacenar prompts ni
+respuestas. Redis sigue fuera de esta fase.
 
 Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 
@@ -42,6 +44,7 @@ Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 | LangGraph | Orquestación del flujo de chat |
 | LLM mock determinista | Capa de IA offline (QueryPlan + políticas JEV AI) |
 | OpenAI-compatible | Proveedor real opcional; misma interfaz que el mock |
+| structlog | Logging JSON con `trace_id` por petición |
 | Dataset + métricas | Evaluación del clasificador en CI |
 
 ## Requisitos
@@ -118,6 +121,11 @@ políticas de JEV AI y ejecuta la consulta con los mismos servicios que la API d
 analítica. Para conservar el hilo, crea una conversación y envía mensajes a
 `/conversations/{id}/messages`. El contrato completo está en [`docs/api.md`](docs/api.md)
 y el flujo en [`docs/chat.md`](docs/chat.md).
+
+Todas las respuestas incluyen `X-Trace-ID`; `/chat` y el envío persistente también
+devuelven `trace_id` en el cuerpo. Las trazas se guardan en `traces`, `spans` y
+`model_calls`. Es telemetría best-effort: no guarda prompts ni respuestas y un fallo
+al escribirla no cambia la respuesta del chat. `LOG_LEVEL` controla el logging JSON.
 
 El esquema OpenAPI en `/openapi.json` es el contrato fuente de la API. Si más adelante
 se construye un frontend TypeScript, sus tipos se generarán desde ese esquema; no se
@@ -274,6 +282,7 @@ src/jev_ai/          paquete de la aplicación
   api/               routers y dependencias HTTP
   modules/           dominios de negocio
   ai/                capa de IA: JEV AI, proveedores LLM, chat y workflows
+  observability/     trazas, spans, costes y logging
   infrastructure/    base de datos y sesiones
 alembic/             migraciones
 mocks/datasets/      dataset de mensajes e intenciones

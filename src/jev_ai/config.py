@@ -19,6 +19,7 @@ class Settings(BaseSettings):
         llm_model: Modelo enviado al proveedor real.
         llm_base_url: Raíz de una API compatible con OpenAI.
         llm_timeout_seconds: Tiempo máximo de espera de una llamada al LLM.
+        log_level: Nivel mínimo de los eventos JSON de structlog.
     """
 
     model_config = SettingsConfigDict(
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_base_url: str = "https://api.openai.com/v1"
     llm_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
 
 @lru_cache

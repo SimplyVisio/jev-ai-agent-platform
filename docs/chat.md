@@ -54,10 +54,12 @@ La memoria es explícita y acotada:
 El proveedor LLM recibe el contexto en
 `LLMProvider.generate(..., context=LLMContext)`, con los mensajes y el último plan.
 
-## Traza para depuración
+## Trazas y observabilidad
 
-`POST /api/v1/chat` y `POST /api/v1/conversations/{id}/messages` aceptan
-`"debug": true`. La respuesta incluye `trace`, construida con los updates reales de
+Cada petición recibe un `trace_id` UUID y devuelve la cabecera `X-Trace-ID`. El
+servidor no confía en un identificador enviado por el cliente. `POST /api/v1/chat` y
+`POST /api/v1/conversations/{id}/messages` aceptan `"debug": true`; en ese caso la
+respuesta también incluye `trace`, construida con los updates reales de
 `graph.astream(..., stream_mode="updates")`:
 
 ```text
@@ -67,6 +69,23 @@ El proveedor LLM recibe el contexto en
 4. execute_service   consulta real a PostgreSQL vía SQLAlchemy
 5. generate_response respuesta desde plantilla
 ```
+
+La traza operativa se persiste siempre, incluso sin `debug`:
+
+- `traces`: estado, intención, error, duración y detalles acotados (`dry_run`,
+  `message_chars`, `span_count`, `model_call_count`).
+- `spans`: nodos del grafo, duración y detalle operativo.
+- `model_calls`: proveedor, modelo, estado, latencia, tokens y coste estimado.
+
+No se guardan prompts, mensajes ni respuestas completas. La telemetría se escribe en
+una sesión independiente y es best-effort; si falla, se registra el error y la
+respuesta del chat no cambia. En el chat persistente, la traza se guarda **después**
+de confirmar el turno de negocio para no retener el bloqueo de la conversación.
+
+`messages.trace_id` enlaza ambos mensajes del turno con su traza, sin FK para que un
+fallo de telemetría no condicione la transacción. El coste se calcula con `Decimal`,
+se etiqueta con `price_version` y es una estimación, no una factura. Solo se estima
+`service_tier="standard"`; cualquier modelo o tier desconocido devuelve `null`.
 
 La CLI lo muestra con `--debug`. No se añade un paso de caché porque el backend no
 cachea resultados todavía; Redis está disponible en Compose pero no participa en este
@@ -124,15 +143,17 @@ métricas ni permisos: delegan en los servicios existentes.
 
 ## Proveedores LLM
 
-`LLMProvider` es la interfaz única. `build_llm_provider(Settings)` elige la
-implementación al arrancar la aplicación:
+`LLMProvider` es la interfaz única y devuelve `LLMResult` (`content`, `usage`,
+`service_tier`). `build_llm_provider(Settings)` elige la implementación al arrancar:
 
 - `LLM_PROVIDER=mock` (predeterminado): `MockLLMProvider`, sin red ni API key.
 - `LLM_PROVIDER=openai`: `OpenAICompatibleProvider`, que llama a
   `{LLM_BASE_URL}/chat/completions` con `LLM_API_KEY` y `LLM_MODEL`.
 
-La app construye `ChatService` y `PersistentChatService` una vez y los expone como
-dependencias de FastAPI. Cambiar de proveedor no cambia el grafo ni los endpoints.
+La app envuelve el proveedor con `InstrumentedLLMProvider`, que mide latencia y
+registra tokens/coste sin alterar el resultado. `ChatService` y
+`PersistentChatService` se construyen una vez y se exponen como dependencias de
+FastAPI. Cambiar de proveedor no cambia el grafo ni los endpoints.
 
 ### Mock
 

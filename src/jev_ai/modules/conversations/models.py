@@ -87,6 +87,7 @@ class Message(Base):
         confidence: Confianza del clasificador en respuestas del asistente.
         status: Estado del flujo en respuestas del asistente.
         query_plan: Plan validado y ejecutado, serializado como JSON.
+        trace_id: Traza observable del turno; sin FK para no acoplar negocio y telemetría.
         created_at: Fecha de alta asignada por PostgreSQL.
     """
 
@@ -114,6 +115,7 @@ class Message(Base):
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     query_plan: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    trace_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

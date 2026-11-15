@@ -75,10 +75,11 @@ class ChatNodes:
     async def propose_plan(self, state: ChatState) -> dict:
         """Pide al LLM un plan y lo convierte en un ``QueryPlan`` tipado."""
         try:
-            raw_plan = await self._llm.generate(
+            result = await self._llm.generate(
                 state["message"],
                 context=state.get("context"),
             )
+            raw_plan = result.content
         except LLMNoResponseError:
             return {
                 "status": ChatStatus.NEEDS_CLARIFICATION,

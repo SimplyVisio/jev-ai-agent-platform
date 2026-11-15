@@ -1,12 +1,12 @@
 """Entrada de la capa de chat: delega el flujo en el grafo de LangGraph."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from langchain_core.runnables import RunnableConfig
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from jev_ai.ai.jev.intents import Intent, IntentClassifier
 from jev_ai.ai.jev.plans import QueryPlan, plan_to_dict
@@ -20,6 +20,12 @@ from jev_ai.modules.conversations.models import (
     Message,
     MessageRole,
 )
+from jev_ai.observability.context import (
+    current_trace_id,
+    reset_trace_recorder,
+    set_trace_recorder,
+)
+from jev_ai.observability.recorder import TraceRecorder
 
 
 @dataclass(frozen=True)
@@ -42,13 +48,21 @@ class ChatResult:
     query_plan: QueryPlan | None = None
     data: Any = None
     trace: tuple[ChatTraceStep, ...] = ()
+    trace_id: UUID = field(default_factory=uuid4)
 
 
 class ChatService:
     """Orquesta el grafo de chat con las dependencias del endpoint."""
 
-    def __init__(self, classifier: IntentClassifier, llm: LLMProvider) -> None:
+    def __init__(
+        self,
+        classifier: IntentClassifier,
+        llm: LLMProvider,
+        *,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+    ) -> None:
         self._graph = build_chat_graph(classifier, llm)
+        self._session_factory = session_factory
 
     async def handle(
         self,
@@ -59,6 +73,9 @@ class ChatService:
         dry_run: bool = False,
         conversation_id: UUID | None = None,
         context: LLMContext | None = None,
+        trace_id: UUID | None = None,
+        trace_recorder: TraceRecorder | None = None,
+        persist_trace: bool = True,
     ) -> ChatResult:
         """Procesa un mensaje y devuelve respuesta, plan y datos.
 
@@ -77,35 +94,90 @@ class ChatService:
         final_state: ChatState = dict(initial_state)
         trace: list[ChatTraceStep] = []
         last_step = perf_counter()
-
-        async for update in self._graph.astream(
-            initial_state,
-            config,
-            stream_mode="updates",
-        ):
-            now = perf_counter()
-            for node, node_update in update.items():
-                if not isinstance(node_update, dict):
-                    continue
-                final_state.update(node_update)
-                trace.append(
-                    ChatTraceStep(
-                        node=node,
-                        detail=_describe_step(node, final_state),
-                        duration_ms=round((now - last_step) * 1000, 2),
-                    )
-                )
-                last_step = now
-
-        return ChatResult(
-            status=final_state.get("status", ChatStatus.ERROR),
-            intent=final_state.get("intent", Intent.UNKNOWN),
-            confidence=final_state.get("confidence", 0.0),
-            reply=final_state.get("reply", ""),
-            query_plan=final_state.get("plan"),
-            data=final_state.get("data"),
-            trace=tuple(trace),
+        trace_id = trace_recorder.trace_id if trace_recorder is not None else trace_id
+        trace_id = trace_id or current_trace_id() or uuid4()
+        recorder = trace_recorder or TraceRecorder(
+            organization_id=organization_id,
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            details={
+                "dry_run": dry_run,
+                "message_chars": len(message),
+            },
         )
+        recorder_token = set_trace_recorder(recorder)
+        final_status = ChatStatus.ERROR
+        final_intent = Intent.UNKNOWN
+
+        try:
+            async for update in self._graph.astream(
+                initial_state,
+                config,
+                stream_mode="updates",
+            ):
+                now = perf_counter()
+                for node, node_update in update.items():
+                    if not isinstance(node_update, dict):
+                        continue
+                    final_state.update(node_update)
+                    final_status = final_state.get("status", ChatStatus.ERROR)
+                    final_intent = final_state.get("intent", Intent.UNKNOWN)
+                    duration_ms = round((now - last_step) * 1000, 2)
+                    detail = _describe_step(node, final_state)
+                    trace.append(
+                        ChatTraceStep(
+                            node=node,
+                            detail=detail,
+                            duration_ms=duration_ms,
+                        )
+                    )
+                    recorder.add_span(
+                        name=node,
+                        kind="graph_node",
+                        duration_ms=duration_ms,
+                        attributes={"detail": detail},
+                    )
+                    last_step = now
+
+            recorder.finish(
+                status=final_status.value,
+                intent=final_intent.value,
+                error_code=_error_code(final_state),
+            )
+            return ChatResult(
+                status=final_status,
+                intent=final_intent,
+                confidence=final_state.get("confidence", 0.0),
+                reply=final_state.get("reply", ""),
+                query_plan=final_state.get("plan"),
+                data=final_state.get("data"),
+                trace=tuple(trace),
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            recorder.add_span(
+                name="graph",
+                kind="graph",
+                duration_ms=(perf_counter() - last_step) * 1000,
+                status="error",
+                error_type=type(exc).__name__,
+            )
+            recorder.finish(
+                status=ChatStatus.ERROR.value,
+                intent=final_intent.value,
+                error_code=type(exc).__name__,
+            )
+            raise
+        finally:
+            reset_trace_recorder(recorder_token)
+            if persist_trace:
+                await self.persist_trace(recorder)
+
+    async def persist_trace(self, recorder: TraceRecorder) -> bool:
+        """Persiste una traza fuera de la transacción de negocio."""
+        if self._session_factory is None:
+            return False
+        return await recorder.persist(self._session_factory)
 
 
 @dataclass(frozen=True)
@@ -116,6 +188,16 @@ class PersistentChatResult:
     conversation: Conversation
     user_message: Message
     assistant_message: Message
+
+
+def _error_code(state: ChatState) -> str | None:
+    """Extrae un código estable de la validación o del error del proveedor."""
+    errors = state.get("errors")
+    if errors:
+        return str(errors[0])
+    if state.get("status") is ChatStatus.ERROR:
+        return "llm_error"
+    return None
 
 
 def _describe_step(node: str, state: ChatState) -> str:
@@ -185,6 +267,13 @@ class PersistentChatService:
             conversation_id,
         )
         sequence = await conversations.next_message_sequence(session, conversation_id)
+        trace_id = current_trace_id() or uuid4()
+        recorder = TraceRecorder(
+            organization_id=organization_id,
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            details={"dry_run": False, "message_chars": len(message)},
+        )
 
         user_message = await conversations.add_message(
             session,
@@ -192,30 +281,46 @@ class PersistentChatService:
             sequence=sequence,
             role=MessageRole.USER,
             content=message,
+            trace_id=trace_id,
         )
         conversations.set_auto_title(conversation, message)
 
-        result = await self._chat.handle(
-            session,
-            organization_id,
-            message,
-            conversation_id=conversation_id,
-            context=context,
-        )
-        assistant_message = await conversations.add_message(
-            session,
-            conversation,
-            sequence=sequence + 1,
-            role=MessageRole.ASSISTANT,
-            content=result.reply,
-            intent=result.intent.value,
-            confidence=result.confidence,
-            status=result.status.value,
-            query_plan=(None if result.query_plan is None else plan_to_dict(result.query_plan)),
-        )
-        conversations.touch(conversation)
-        await session.commit()
+        try:
+            result = await self._chat.handle(
+                session,
+                organization_id,
+                message,
+                conversation_id=conversation_id,
+                context=context,
+                trace_id=trace_id,
+                trace_recorder=recorder,
+                persist_trace=False,
+            )
+            assistant_message = await conversations.add_message(
+                session,
+                conversation,
+                sequence=sequence + 1,
+                role=MessageRole.ASSISTANT,
+                content=result.reply,
+                intent=result.intent.value,
+                confidence=result.confidence,
+                status=result.status.value,
+                query_plan=(None if result.query_plan is None else plan_to_dict(result.query_plan)),
+                trace_id=trace_id,
+            )
+            conversations.touch(conversation)
+            await session.commit()
+        except Exception as exc:
+            recorder.finish(
+                status=ChatStatus.ERROR.value,
+                intent=recorder.intent,
+                error_code=type(exc).__name__,
+            )
+            await session.rollback()
+            await self._chat.persist_trace(recorder)
+            raise
 
+        await self._chat.persist_trace(recorder)
         return PersistentChatResult(
             result=result,
             conversation=conversation,

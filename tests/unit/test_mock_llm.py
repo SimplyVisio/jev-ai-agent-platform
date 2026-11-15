@@ -17,14 +17,14 @@ async def test_returns_fixed_response_before_planner() -> None:
         planner=lambda _prompt: {"operation": "compare_periods"},
     )
 
-    assert await provider.generate("Hola, ¿qué tal?") == "respuesta fija"
+    assert (await provider.generate("Hola, ¿qué tal?")).content == "respuesta fija"
 
 
 @pytest.mark.asyncio
 async def test_default_provider_returns_plan_json() -> None:
     provider = MockLLMProvider.default()
 
-    raw = await provider.generate("Top 2 anuncios por ROAS en octubre de 2026")
+    raw = (await provider.generate("Top 2 anuncios por ROAS en octubre de 2026")).content
 
     plan = json.loads(raw)
     assert plan["operation"] == "top_ads_by_metric"
@@ -63,7 +63,7 @@ async def test_mock_uses_context_for_follow_up() -> None:
         )
     )
 
-    raw = await provider.generate("¿Y en septiembre de 2026?", context=context)
+    raw = (await provider.generate("¿Y en septiembre de 2026?", context=context)).content
 
     plan = parse_query_plan(raw)
     assert plan.operation.value == "top_ads_by_metric"
