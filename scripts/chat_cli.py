@@ -42,11 +42,13 @@ def send_message(
 def _print_response(body: dict, *, show_plan: bool, show_trace: bool) -> None:
     print(f"\nJEV AI [{body['status']} · {body['intent']}]:")
     print(body["reply"])
+    if body.get("trace_id"):
+        print(f"\nTrace ID: {body['trace_id']}")
     if show_plan and body.get("query_plan"):
         print("\nQueryPlan validado:")
         print(json.dumps(body["query_plan"], indent=2, ensure_ascii=False))
     if show_trace and body.get("trace"):
-        print("\nTraza LangGraph:")
+        print("\nTraza del flujo (LangGraph + Jev):")
         for index, step in enumerate(body["trace"], start=1):
             print(f"  {index}. {step['node']} ({step['duration_ms']:.2f} ms)")
             print(f"     {step['detail']}")

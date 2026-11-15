@@ -23,3 +23,6 @@ htmlcov/
 
 # Guía local del agente (no se versiona)
 AGENTS.md
+
+# Referencia local de la API TypeSafe (no se versiona)
+jev-ai-typesafe-api.md

@@ -200,7 +200,7 @@ def test_chat_debug_returns_real_graph_trace(
         "execute_service",
         "generate_response",
     ]
-    assert "rule=top_ads_keyword" in trace[0]["detail"]
+    assert "reason=jev:mock:deterministic" in trace[0]["detail"]
     assert "top_ads_by_metric" in trace[1]["detail"]
     assert "plan aceptado" in trace[2]["detail"]
     assert "consultando PostgreSQL" in trace[3]["detail"]
@@ -268,11 +268,14 @@ async def test_chat_returns_trace_id_and_persists_observability(
         "generate_response",
     ]
     assert all(span.trace_id == trace_id for span in spans)
-    assert len(calls) == 1
-    assert calls[0].provider == "mock"
-    assert calls[0].model == "deterministic"
-    assert calls[0].status == "ok"
-    assert calls[0].estimated_cost_usd is None
+    assert len(calls) == 2
+    assert {(call.provider, call.call_type) for call in calls} == {
+        ("mock", "decision"),
+        ("mock", "generation"),
+    }
+    assert all(call.model == "deterministic" for call in calls)
+    assert all(call.status == "ok" for call in calls)
+    assert all(call.estimated_cost_usd is None for call in calls)
 
 
 def test_chat_without_debug_does_not_expose_trace(

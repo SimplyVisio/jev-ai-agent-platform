@@ -15,16 +15,24 @@ contra PostgreSQL, migraciones con Alembic, modelo de marketing (`campaigns`, `a
 `ad_insights`), CRUD de campañas y anuncios y API de analítica con métricas agregadas.
 
 Además, hay un chat que traduce lenguaje natural a un `QueryPlan` validado y lo
-ejecuta con SQLAlchemy. Por defecto usa un **mock determinista**, sin API key ni coste;
-también admite un proveedor **OpenAI-compatible** configurado por entorno. El flujo se
-orquesta con LangGraph y el clasificador se evalúa con un dataset versionado
-(accuracy, precision, recall y F1); CI falla si baja de los umbrales.
+ejecuta con SQLAlchemy. Por defecto usa **mocks deterministas para Jev y para el LLM**,
+sin API key ni coste; también admite **TypeSafe JEV** y un proveedor
+**OpenAI-compatible** configurados por entorno. El flujo se orquesta con LangGraph y
+el clasificador se evalúa con un dataset versionado (accuracy, precision, recall y F1);
+CI falla si baja de los umbrales.
 
 Las conversaciones se persisten en PostgreSQL (`conversations` y `messages`) con
 memoria acotada: los últimos 10 mensajes y 4000 caracteres, más el último plan para
 resolver seguimientos. Cada petición genera un `trace_id` y el chat guarda trazas,
 spans y llamadas a modelos con tokens y coste estimado, sin almacenar prompts ni
 respuestas. Redis sigue fuera de esta fase.
+
+El chat clasifica con TypeSafe JEV (`POST /v1/systemone`) a través de
+`JevIntentClassifier`: preguntas `noul`, `choice`, `score` y `box`, respuesta validada
+con Pydantic, reintentos `429`/`529`, errores de dominio e instrumentación como
+`call_type="decision"`. `JEV_PROVIDER=mock` es el camino predeterminado;
+`JEV_PROVIDER=typesafe` activa el cliente real y mantiene un fallback por reglas. Ver
+[`docs/jev.md`](docs/jev.md).
 
 Consulta la arquitectura, el contrato HTTP y las decisiones en [`docs/`](docs/).
 
@@ -144,6 +152,29 @@ La respuesta trae el estado, la intención, la confianza, el texto, el `query_pl
 validado y los datos. Los mensajes ambiguos devuelven `needs_clarification` con una
 petición de aclaración; `dry_run: true` valida el plan sin consultar la base de datos.
 
+### Clasificador Jev real
+
+El mock también es el predeterminado para Jev. Para usar TypeSafe, define las variables
+en `.env` y reconstruye el backend:
+
+```bash
+JEV_PROVIDER=typesafe
+TYPESAFE_API_KEY=...
+JEV_MODEL=jev-1.13.0
+JEV_BASE_URL=https://api.typesafe.ai
+JEV_TIMEOUT_SECONDS=120
+JEV_MAX_RETRIES=2
+```
+
+```bash
+docker compose up -d --build --wait backend
+```
+
+Jev real clasifica la intención con una pregunta `choice`; si falla o devuelve una
+opción fuera del catálogo, el chat cae en `RuleBasedClassifier` y lo registra en la
+traza. La llamada se guarda en `model_calls` como `decision`. El cliente no usa SDK y
+los tests no llaman a TypeSafe.
+
 ### Proveedor LLM real
 
 El mock es el predeterminado. Para usar OpenAI, define las variables en `.env` y
@@ -194,10 +225,10 @@ JEV_API_KEY="jev_..." python scripts/chat_cli.py --show-plan
 JEV_API_KEY="jev_..." python scripts/chat_cli.py --debug
 ```
 
-`--debug` muestra la traza real de LangGraph: clasificación, plan, validación,
-consulta a PostgreSQL y generación de la respuesta, con tiempos por nodo. No inventa
-un paso de caché: hoy el backend no cachea resultados; Redis está levantado pero la
-aplicación todavía no lo usa.
+`--debug` muestra la traza real de LangGraph + Jev: clasificación (proveedor, modelo
+y motivo), plan, validación, consulta a PostgreSQL y generación de la respuesta, con
+tiempos por nodo. No inventa un paso de caché: hoy el backend no cachea resultados;
+Redis está levantado pero la aplicación todavía no lo usa.
 
 Para depurar el mock sin depender de una API externa, deja `LLM_PROVIDER=mock` en
 `.env`, reconstruye el backend y ejecuta el mismo CLI:
@@ -208,8 +239,27 @@ JEV_API_KEY="jev_..." uv run python scripts/chat_cli.py \
   --message "Top 2 anuncios por ROAS en octubre de 2026" --debug
 ```
 
-No hay un CLI separado para el mock: `--debug` sirve tanto para el mock como para
-OpenAI y muestra qué regla del clasificador y qué plan se usaron.
+No hay un CLI separado para el mock: `--debug` sirve para el mock, TypeSafe, OpenAI o
+cualquier combinación y muestra qué proveedor clasificó y qué plan se usó.
+
+### Reporte de observabilidad y analítica
+
+`scripts/report.py` consulta PostgreSQL dentro de Compose y resume trazas, costes de
+modelos y métricas de negocio:
+
+```bash
+docker compose run --rm backend python scripts/report.py --organization Demo
+docker compose run --rm backend python scripts/report.py --organization Demo \
+  --date-from 2026-10-01 --date-to 2026-10-31
+docker compose run --rm backend python scripts/report.py --trace <trace_id>
+```
+
+Sin `--organization` muestra todas las trazas y costes, pero omite la analítica. Por
+defecto usa los últimos siete días (fechas UTC) y las diez trazas más recientes. La sección de
+costes agrupa por proveedor, modelo y tipo de llamada (`decision` o `generation`); el
+detalle de una traza muestra sus spans y llamadas. El mock no tiene tarifa, así que
+el reporte lo marca como «sin precio» en vez de inventar un coste cero. El CLI de chat
+imprime el `trace_id` de cada respuesta para poder pasarlo a `--trace`.
 
 Colección HTTP para Bruno en [`bruno/jev-ai`](bruno/jev-ai): importa la carpeta,
 selecciona el entorno `Local`, sustituye `apiKey` por tu clave y `conversationId` por
@@ -240,8 +290,9 @@ Los contenedores tienen límites de recursos: PostgreSQL 1 CPU / 512 MB, Redis
 Todavía no hay un proveedor cloud elegido ni manifiestos de Terraform/Kubernetes. El
 procedimiento reproducible con Docker Compose es:
 
-1. Copiar `.env.example` a `.env` y definir una contraseña fuerte, `LLM_PROVIDER` y,
-   si se usa OpenAI, `LLM_API_KEY`. No versionar `.env`.
+1. Copiar `.env.example` a `.env` y definir una contraseña fuerte, `LLM_PROVIDER`,
+   `JEV_PROVIDER` y, si se usan los proveedores reales, `LLM_API_KEY` y
+   `TYPESAFE_API_KEY`. No versionar `.env`.
 2. Construir y arrancar: `docker compose up -d --build --wait`.
 3. Aplicar migraciones: `docker compose run --rm backend alembic upgrade head`.
 4. Crear la organización y su API key una sola vez:
@@ -304,6 +355,7 @@ Dockerfile           imagen del backend
 - [`docs/chat.md`](docs/chat.md): flujo de chat, QueryPlan, políticas y proveedores.
 - [`docs/evaluation.md`](docs/evaluation.md): dataset y métricas del clasificador.
 - [`docs/metrics.md`](docs/metrics.md): fórmulas y reglas de agregación.
+- [`docs/jev.md`](docs/jev.md): contrato y cliente de TypeSafe JEV.
 - [`docs/code-reference.md`](docs/code-reference.md): funciones, clases y contratos.
 - [`docs/decisions/`](docs/decisions): ADR de decisiones clave.
 
