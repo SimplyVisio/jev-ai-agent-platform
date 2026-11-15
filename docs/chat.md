@@ -1,15 +1,16 @@
 # Chat y QueryPlan
 
-El chat permite consultar campañas y anuncios en lenguaje natural. Por defecto usa un
-proveedor mock determinista, sin API key externa ni coste; también admite un proveedor
-OpenAI-compatible configurado por entorno. La ejecución, las políticas y las respuestas
-siguen siendo deterministas: el LLM solo propone el plan.
+El chat permite consultar campañas y anuncios en lenguaje natural. Por defecto usa
+mocks deterministas para Jev y para el LLM, sin API key externa ni coste; también
+admite TypeSafe JEV y un proveedor OpenAI-compatible configurados por entorno. La
+ejecución, las políticas y las respuestas siguen siendo deterministas: Jev clasifica y
+el LLM solo propone el plan.
 
 ## Flujo
 
 ```text
 START
-  → classify_intent       RuleBasedClassifier (JEV AI)
+  → classify_intent       JevIntentClassifier (mock o TypeSafe)
   → route_request         help | clarify | plan
   → propose_plan          LLMProvider (mock u OpenAI) + parse_query_plan
   → validate_plan         validate_query_plan (JEV AI)
@@ -63,7 +64,7 @@ respuesta también incluye `trace`, construida con los updates reales de
 `graph.astream(..., stream_mode="updates")`:
 
 ```text
-1. classify_intent   intent, confianza y regla
+1. classify_intent   intent, confianza, proveedor/modelo y motivo
 2. propose_plan      plan propuesto o motivo de aclaración
 3. validate_plan     aceptado o violaciones de JEV AI
 4. execute_service   consulta real a PostgreSQL vía SQLAlchemy
@@ -75,7 +76,9 @@ La traza operativa se persiste siempre, incluso sin `debug`:
 - `traces`: estado, intención, error, duración y detalles acotados (`dry_run`,
   `message_chars`, `span_count`, `model_call_count`).
 - `spans`: nodos del grafo, duración y detalle operativo.
-- `model_calls`: proveedor, modelo, estado, latencia, tokens y coste estimado.
+- `model_calls`: proveedor, modelo, estado, latencia, tokens y coste estimado. En un
+  turno normal hay una llamada `decision` de Jev y, si hay plan, una `generation` del
+  LLM.
 
 No se guardan prompts, mensajes ni respuestas completas. La telemetría se escribe en
 una sesión independiente y es best-effort; si falla, se registra el error y la
@@ -87,9 +90,19 @@ fallo de telemetría no condicione la transacción. El coste se calcula con `Dec
 se etiqueta con `price_version` y es una estimación, no una factura. Solo se estima
 `service_tier="standard"`; cualquier modelo o tier desconocido devuelve `null`.
 
-La CLI lo muestra con `--debug`. No se añade un paso de caché porque el backend no
-cachea resultados todavía; Redis está disponible en Compose pero no participa en este
-flujo. Tampoco se exponen filas completas ni el `organization_id`.
+La CLI lo muestra con `--debug` e imprime el `trace_id` de cada respuesta. Para
+consultar lo persistido sin abrir `psql`:
+
+```bash
+docker compose run --rm backend python scripts/report.py --organization Demo
+docker compose run --rm backend python scripts/report.py --trace <trace_id>
+```
+
+El reporte agrupa costes por proveedor/modelo/tipo y, con `--organization`, añade el
+overview y las campañas con más gasto. Las llamadas sin tarifa conocida aparecen como
+«sin precio», no como coste cero. No se añade un paso de caché porque el backend
+no cachea resultados todavía; Redis está disponible en Compose pero no participa en
+este flujo. Tampoco se exponen filas completas ni el `organization_id`.
 
 ## Catálogo cerrado
 
@@ -131,7 +144,7 @@ del contexto autenticado.
 
 | Nodo | Responsabilidad |
 |---|---|
-| `classify_intent` | Clasifica el mensaje y guarda intención/confianza |
+| `classify_intent` | Pregunta a Jev y guarda intención/confianza/proveedor |
 | `help` / `clarify` / `error` | Cierran el flujo con el texto adecuado |
 | `propose_plan` | Pide el plan al LLM y lo parsea con Pydantic |
 | `validate_plan` | Aplica las políticas de JEV AI; corta en `dry_run` |
@@ -140,6 +153,29 @@ del contexto autenticado.
 
 Las rutas condicionales están en `ChatNodes.route_after_*`. Los nodos no calculan
 métricas ni permisos: delegan en los servicios existentes.
+
+## Clasificación con Jev
+
+`JevIntentClassifier` construye una pregunta `choice` con el catálogo cerrado de
+intenciones y la envía a `DecisionProvider`. El resultado se valida antes de usarlo:
+una opción fuera del catálogo o un error de Jev activa el `RuleBasedClassifier` como
+fallback determinista. El motivo de la traza queda como `jev:proveedor:modelo` o
+`jev_fallback:motivo:regla`.
+
+Configuración:
+
+| Variable | Uso |
+|---|---|
+| `JEV_PROVIDER` | `mock` (predeterminado) o `typesafe` |
+| `TYPESAFE_API_KEY` | Obligatoria con `JEV_PROVIDER=typesafe` |
+| `JEV_MODEL` | Modelo de Jev (`jev-1.13.0` por defecto) |
+| `JEV_BASE_URL` | Raíz de TypeSafe |
+| `JEV_TIMEOUT_SECONDS` | Timeout por intento |
+| `JEV_MAX_RETRIES` | Reintentos para 429/529 |
+
+`MockDecisionProvider` responde con las mismas reglas que `RuleBasedClassifier` para
+las preguntas de intención. Sirve para desarrollo y tests; no estima la calidad de un
+Jev real. `InstrumentedDecisionProvider` registra la llamada como `call_type="decision"`.
 
 ## Proveedores LLM
 

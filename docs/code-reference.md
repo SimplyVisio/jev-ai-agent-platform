@@ -15,7 +15,7 @@ responsabilidad tiene cada una. Se actualiza al cerrar cada fase.
 | `jev_ai/api/v1/endpoints/` | Endpoints HTTP |
 | `jev_ai/modules/organizations/` | Entidades y consultas de organizaciones |
 | `jev_ai/modules/conversations/` | Conversaciones, mensajes y transcript |
-| `jev_ai/ai/jev/` | Intenciones, QueryPlan, clasificador, políticas y evaluación |
+| `jev_ai/ai/jev/` | Intenciones, QueryPlan, clasificador, políticas, evaluación y cliente TypeSafe |
 | `jev_ai/ai/llm/` | `LLMProvider`, mock, proveedor OpenAI, errores y factory |
 | `jev_ai/ai/chat.py` | Orquestación del chat stateless y persistente |
 | `jev_ai/ai/memory.py` | Contexto acotado de la conversación |
@@ -24,6 +24,7 @@ responsabilidad tiene cada una. Se actualiza al cerrar cada fase.
 | `scripts/create_api_key.py` | Procedimiento de alta de organización y clave |
 | `scripts/seed.py` | Datos sintéticos reproducibles |
 | `scripts/chat_cli.py` | Cliente de chat por terminal |
+| `scripts/report.py` | Reporte de trazas, costes y analítica |
 | `scripts/evaluate_classifier.py` | Evaluación del clasificador para CI |
 
 ## Configuración
@@ -41,6 +42,12 @@ Clase Pydantic que valida la configuración al arrancar. Campos:
 | `llm_model` | `LLM_MODEL` | Modelo enviado al proveedor |
 | `llm_base_url` | `LLM_BASE_URL` | Raíz de la API OpenAI-compatible |
 | `llm_timeout_seconds` | `LLM_TIMEOUT_SECONDS` | Timeout de la llamada |
+| `jev_provider` | `JEV_PROVIDER` | `mock` (predeterminado) o `typesafe` |
+| `typesafe_api_key` | `TYPESAFE_API_KEY` | Clave de TypeSafe |
+| `jev_model` | `JEV_MODEL` | Modelo de Jev |
+| `jev_base_url` | `JEV_BASE_URL` | Raíz de TypeSafe |
+| `jev_timeout_seconds` | `JEV_TIMEOUT_SECONDS` | Timeout por intento |
+| `jev_max_retries` | `JEV_MAX_RETRIES` | Reintentos para 429/529 |
 | `log_level` | `LOG_LEVEL` | Nivel mínimo del logging JSON |
 
 `Settings` no acepta campos extra (`extra="ignore"` descarta las variables de Compose
@@ -50,6 +57,29 @@ que no le incumben).
 
 Devuelve una instancia cacheada con `lru_cache`. Evita releer el entorno en cada
 petición. Los tests no deben modificarla: inyectan `Settings` en `create_app`.
+
+### Motor de decisiones TypeSafe
+
+`ai/jev/contracts.py` define `DecisionProvider`, `DecisionRequest`,
+`DecisionResponse` y las preguntas `NoulQuestion`, `ChoiceQuestion`, `ScoreQuestion` y
+`BoxQuestion`. Las respuestas se modelan con una unión discriminada por `type` y validan
+probabilidades entre 0 y 1; `legend` se tipa como `dict[str, str]`.
+
+`ai/jev/client.py` implementa `TypeSafeJevProvider`: envía
+`POST {base_url}/v1/systemone` con `Authorization: Bearer`, fija `jev-1.13.0` por
+defecto y valida la respuesta con Pydantic. Reintenta `429`/`529`, valida el body
+(32 MiB, 64 niveles y números finitos) y traduce fallos a `JevRequestError`,
+`JevTimeoutError`, `JevConnectionError`, `JevAPIError` o `JevResponseError`.
+
+`ai/jev/mock.py` añade `MockDecisionProvider`, determinista y offline. Su pregunta de
+intención reutiliza las reglas del clasificador; el resto de preguntas recibe una
+respuesta válida trivial. `ai/jev/factory.py` elige mock o TypeSafe con `JEV_PROVIDER`.
+
+`ai/jev/classifier.py` incluye `JevIntentClassifier`: convierte el mensaje en una
+pregunta `choice`, valida la opción y usa `RuleBasedClassifier` como fallback si Jev
+falla. `ai/jev/instrumented.py` añade `InstrumentedDecisionProvider`, que registra la
+llamada como `call_type="decision"` y usa el modelo resuelto para estimar el coste.
+`create_app` inyecta el clasificador Jev y el proveedor LLM ya instrumentados.
 
 ### `build_llm_provider(settings)`
 
@@ -483,17 +513,26 @@ está curado con el mismo vocabulario que las reglas.
 
 Cliente HTTP de terminal basado en `urllib`. Acepta `--api-key` o `JEV_API_KEY`,
 `--message`, `--dry-run`, `--show-plan` y `--debug`. Sin `--message` abre un bucle
-interactivo. Usa `/chat`, por lo que no conserva memoria entre turnos.
+interactivo. Usa `/chat`, por lo que no conserva memoria entre turnos. Imprime el
+`trace_id` de cada respuesta.
+
+### `scripts/report.py`
+
+Reporte de terminal sobre PostgreSQL. Acepta `--organization`, `--date-from`,
+`--date-to`, `--limit` y `--trace`. Sin fechas usa los últimos siete días UTC. Resume
+trazas, costes por proveedor/modelo/tipo y, con organización, overview y campañas por
+gasto. `--trace` muestra los spans y las llamadas de una ejecución concreta.
 
 ## Clases abstractas e interfaces
 
-Ahora existen dos interfaces porque el flujo necesita sustituir implementaciones sin
+Ahora existen tres interfaces porque el flujo necesita sustituir implementaciones sin
 tocar el resto del sistema:
 
 | Interfaz | Implementaciones actuales | Implementaciones previstas |
 |---|---|---|
-| `IntentClassifier` | `RuleBasedClassifier` | TF-IDF, embeddings, híbrido |
-| `LLMProvider` | `MockLLMProvider` | proveedor real |
+| `IntentClassifier` | `RuleBasedClassifier`, `JevIntentClassifier` | TF-IDF, embeddings, híbrido |
+| `DecisionProvider` | `MockDecisionProvider`, `TypeSafeJevProvider` | otros modelos estructurados |
+| `LLMProvider` | `MockLLMProvider`, `OpenAICompatibleProvider` | otros proveedores compatibles |
 
 Además, Pydantic (`Settings`, `QueryPlan`, `ChatRequest`, `ChatResponse`) valida los
 contratos y OpenAPI (`/openapi.json`) publica el esquema HTTP. No se mantiene un espejo

@@ -223,7 +223,8 @@ async def test_send_message_links_messages_and_trace(
     assert trace.conversation_id == UUID(conversation["id"])
     assert trace.organization_id == alpha.organization_id
     assert trace.status == "ok"
-    assert len(calls) == 1
+    assert len(calls) == 2
+    assert {call.call_type for call in calls} == {"decision", "generation"}
 
 
 def test_send_message_debug_returns_graph_trace(

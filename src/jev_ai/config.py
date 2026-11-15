@@ -19,6 +19,12 @@ class Settings(BaseSettings):
         llm_model: Modelo enviado al proveedor real.
         llm_base_url: Raíz de una API compatible con OpenAI.
         llm_timeout_seconds: Tiempo máximo de espera de una llamada al LLM.
+        jev_provider: ``mock`` durante el desarrollo o ``typesafe`` para Jev real.
+        typesafe_api_key: Clave de TypeSafe; obligatoria con ``jev_provider='typesafe'``.
+        jev_model: Modelo de Jev enviado al proveedor real.
+        jev_base_url: Raíz de la API de TypeSafe.
+        jev_timeout_seconds: Timeout por intento del cliente Jev.
+        jev_max_retries: Reintentos adicionales para 429/529.
         log_level: Nivel mínimo de los eventos JSON de structlog.
     """
 
@@ -35,6 +41,12 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_base_url: str = "https://api.openai.com/v1"
     llm_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    jev_provider: Literal["mock", "typesafe"] = "mock"
+    typesafe_api_key: str | None = None
+    jev_model: str = "jev-1.13.0"
+    jev_base_url: str = "https://api.typesafe.ai"
+    jev_timeout_seconds: float = Field(default=120.0, gt=0, le=120)
+    jev_max_retries: int = Field(default=2, ge=0, le=5)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
 
